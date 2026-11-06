@@ -1,5 +1,27 @@
+# Secrets: never publish
 .env
+.env.*
+!.env.example
+
+# Python
 .venv/
+venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
+
+# Local tool settings
+.claude/
+.vscode/
+.idea/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and scratch output
+*.log
+scratch/
+screenshots/
