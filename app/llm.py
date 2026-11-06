@@ -1,5 +1,4 @@
 """LiteLLM wrapper - the only file that knows about providers."""
-import json
 import os
 import re
 import time
@@ -7,7 +6,8 @@ import time
 import litellm
 from dotenv import load_dotenv
 from litellm import Message, ModelResponse
-from litellm.types.utils import ChatCompletionMessageToolCall, Function
+
+from app import fake_llm
 
 load_dotenv()
 
@@ -85,16 +85,17 @@ def _max_retries(err: Exception) -> int:
     return 0
 
 
-def chat(system: str, history: list, tools: list | None = None, on_wait=None) -> ModelResponse:
+def chat(system: str, history: list, tools: list | None = None, on_wait=None,
+         tool_choice: dict | None = None) -> ModelResponse:
     """One model call: system prompt + history + tool schemas -> response.
 
     Retries rate limits (429) and 5xx errors up to 4 times, timeouts and
     connection errors once, calling on_wait(message) before each sleep so the
-    UI can show it.
+    UI can show it. tool_choice (OpenAI format) can force a specific tool.
     """
     model = check_config()
     if fake_enabled():
-        return _fake_chat(history, tools)
+        return fake_llm.respond(history, tools, tool_choice)
 
     messages = [{"role": "system", "content": system}] + history
     attempt = 0
@@ -102,8 +103,9 @@ def chat(system: str, history: list, tools: list | None = None, on_wait=None) ->
         try:
             # tools are passed through; we run the tool loop ourselves
             # timeout so a hung request fails (and retries) instead of freezing the UI
-            return litellm.completion(model=model, messages=messages,
-                                      tools=tools or None, timeout=REQUEST_TIMEOUT)
+            extra = {"tool_choice": tool_choice} if tools and tool_choice else {}
+            return litellm.completion(model=model, messages=messages, tools=tools or None,
+                                      timeout=REQUEST_TIMEOUT, **extra)
         except Exception as err:
             limit = _max_retries(err)
             if attempt >= limit:
@@ -125,31 +127,3 @@ def append_reply(history: list, response: ModelResponse) -> Message:
     message = response.choices[0].message
     history.append(message)
     return message
-
-
-# --- FAKE_LLM=1: no network, no quota --------------------------------------
-
-def _fake_chat(history: list, tools: list | None) -> ModelResponse:
-    """Call each offered tool once with empty args, then give a final answer.
-
-    The step is chosen by how many assistant replies are already in history.
-    """
-    names = [t["function"]["name"] for t in tools or []]
-    step = sum(1 for m in history if _role(m) == "assistant")
-    if step < len(names):
-        call = ChatCompletionMessageToolCall(
-            id=f"fake_{step}", type="function",
-            function=Function(name=names[step], arguments=json.dumps({})),
-        )
-        message = Message(role="assistant", content=None, tool_calls=[call])
-        finish = "tool_calls"
-    else:
-        message = Message(role="assistant", content="FAKE: done.")
-        finish = "stop"
-    return ModelResponse(
-        model="fake", choices=[{"index": 0, "message": message, "finish_reason": finish}]
-    )
-
-
-def _role(message) -> str:
-    return message["role"] if isinstance(message, dict) else message.role

@@ -161,3 +161,11 @@ def test_every_schema_has_a_function():
 def test_user_agent_carries_contact(monkeypatch):
     monkeypatch.setenv("CONTACT_URL", "https://example.org/me")
     assert "https://example.org/me" in tools.user_agent()
+
+
+def test_pack_strips_copied_question_numbers(session):
+    tools.calculate_fit_score(session, [req("must", "strong")])
+    answers = [{"question": "1. Why us?", "answer": "a"}, {"question": "2) Why you?", "answer": "b"},
+               {"question": "Is 3 a crowd?", "answer": "c"}]
+    tools.save_application_pack(session, **{**PACK, "answers": answers})
+    assert [a["question"] for a in session.pack["answers"]] == ["Why us?", "Why you?", "Is 3 a crowd?"]

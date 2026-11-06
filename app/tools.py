@@ -174,13 +174,21 @@ def calculate_fit_score(session, requirements: list[dict]) -> dict:
 
 # --- 5. save_application_pack ------------------------------------------------
 
+def _strip_question_numbers(answers: list) -> list:
+    """Models copy the "1. " numbering from the task message into the question text."""
+    return [dict(a, question=re.sub(r"^\s*\d+[.)]\s*", "", a["question"]))
+            if isinstance(a, dict) and isinstance(a.get("question"), str) else a
+            for a in answers]
+
+
 def save_application_pack(session, role: str, company: str, summary: str, strengths: list,
                           gaps: list, answers: list, cover_note: str) -> dict:
     if session.fit is None:
         return {"error": "No fit score yet. Call calculate_fit_score first, then save the pack."}
     session.pack = {
         "role": role, "company": company, "summary": summary,
-        "strengths": strengths, "gaps": gaps, "answers": answers, "cover_note": cover_note,
+        "strengths": strengths, "gaps": gaps, "answers": _strip_question_numbers(answers),
+        "cover_note": cover_note,
         # Always taken from the calculator, never from the model, so the score can't be invented.
         "score": session.fit["score"],
         "verdict": session.fit["verdict"],

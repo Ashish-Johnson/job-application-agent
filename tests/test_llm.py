@@ -17,19 +17,26 @@ def test_ollama_needs_no_key(monkeypatch):
     assert llm.check_config() == "ollama/qwen3:8b"
 
 
-def test_fake_llm_calls_tools_then_answers(monkeypatch):
+def test_fake_llm_honors_tool_choice(monkeypatch):
     monkeypatch.setenv("FAKE_LLM", "1")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)  # no key needed when fake
-    tools = [{"type": "function", "function": {"name": "tool_a", "parameters": {}}}]
-    history = [{"role": "user", "content": "go"}]
+    history = [{"role": "user", "content": "=== JOB POST ==="}]
+    forced = {"type": "function", "function": {"name": "save_application_pack"}}
 
-    first = llm.append_reply(history, llm.chat("sys", history, tools))
-    assert first.tool_calls[0].function.name == "tool_a"
-    assert history[-1] is first  # appended unchanged, same object
+    message = llm.append_reply(history, llm.chat("sys", history, [], tool_choice=forced))
+    assert message.tool_calls[0].function.name == "save_application_pack"
+    assert history[-1] is message  # appended unchanged, same object
 
-    history.append({"role": "tool", "tool_call_id": "fake_0", "content": "ok"})
-    last = llm.append_reply(history, llm.chat("sys", history, tools))
-    assert last.content == "FAKE: done." and not last.tool_calls
+
+def test_tool_choice_is_passed_to_litellm(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "ollama/x")
+    monkeypatch.delenv("FAKE_LLM", raising=False)
+    seen = {}
+    monkeypatch.setattr(llm.litellm, "completion", lambda **kw: seen.update(kw) or "ok")
+    tools = [{"type": "function", "function": {"name": "t", "parameters": {}}}]
+    choice = {"type": "function", "function": {"name": "t"}}
+    llm.chat("s", [], tools, tool_choice=choice)
+    assert seen["tool_choice"] == choice
 
 
 def test_retries_rate_limit_then_succeeds(monkeypatch):
@@ -84,3 +91,10 @@ def test_other_errors_are_not_retried(monkeypatch):
     with pytest.raises(ValueError):
         llm.chat("s", [])
     assert len(calls) == 1
+
+
+def test_litellm_tool_calls_have_their_hidden_dependency():
+    # litellm imports this module on every completion() call that passes tools;
+    # it needs the `mcp` package, which litellm does not declare (see requirements.txt)
+    import importlib
+    importlib.import_module("litellm.responses.mcp.chat_completions_handler")

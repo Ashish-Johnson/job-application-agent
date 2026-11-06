@@ -23,6 +23,8 @@ Keep it small and readable: plain functions, short files, comments only where th
 - `app/agent.py` - system prompt, Session, agent loop
 - `app/tools.py` - five tools + schemas (OpenAI function-calling format)
 - `app/llm.py` - LiteLLM wrapper; the only file that knows about providers
+- `app/fake_llm.py` - scripted fake model for FAKE_LLM=1 (tests, UI work, no quota)
+- `scripts/` - `smoke_llm.py` (check your key), `run_cli.py` (run the agent on samples/)
 - `static/index.html` - the single page (vanilla JS/CSS)
 - `samples/`, `tests/`, `run.py`, `README.md`, `requirements.txt`, `.env.example`
 
