@@ -1,12 +1,843 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Job Application Agent</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Job Application Agent</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --text: #1a2230;
+  --muted: #586374;
+  --border: #dde1e8;
+  --accent: #2b57d6;
+  --accent-text: #ffffff;
+  --accent-soft: #e7edfc;
+  --amber-bg: #fff3d1;
+  --amber-border: #e3b94c;
+  --amber-text: #70480a;
+  --red-bg: #fdecec;
+  --red-border: #e0a3a3;
+  --red-text: #9a1b1b;
+  --green-bg: #e2f4e8;
+  --green-text: #17653a;
+  --shadow: 0 1px 2px rgba(20, 30, 50, 0.06);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1319;
+    --surface: #171c24;
+    --surface-2: #1d232d;
+    --text: #e5e9ef;
+    --muted: #9ba6b5;
+    --border: #2b3340;
+    --accent: #7c9cff;
+    --accent-text: #0a1022;
+    --accent-soft: #212c4a;
+    --amber-bg: #3a2d0e;
+    --amber-border: #8a6a1c;
+    --amber-text: #f3d283;
+    --red-bg: #3b1b1d;
+    --red-border: #8c3c40;
+    --red-text: #ffb4b4;
+    --green-bg: #16301f;
+    --green-text: #8fd9a9;
+    --shadow: none;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.55 var(--font);
+}
+h1, h2, h3, p { margin: 0; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+
+/* Header */
+.top { border-bottom: 1px solid var(--border); background: var(--surface); }
+.top-inner { display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; padding-top: 14px; padding-bottom: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .mark { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); position: relative; flex: none; }
+.brand .mark::after { content: ""; position: absolute; left: 6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent-text); }
+.brand h1 { font-size: 1.125rem; font-weight: 650; letter-spacing: -0.01em; }
+.badge {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; background: var(--surface-2);
+}
+.badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--green-text); flex: none; }
+.badge[data-mode="demo"]::before { background: var(--amber-border); }
+.badge[data-mode="offline"]::before { background: var(--red-border); }
+
+/* Layout */
+main { padding-top: 24px; padding-bottom: 8px; }
+.grid { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 960px) { .grid { grid-template-columns: minmax(340px, 420px) minmax(0, 1fr); } }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; box-shadow: var(--shadow); min-width: 0;
+}
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+h2 { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.005em; }
+.section-title { font-size: 1.125rem; font-weight: 650; margin: 32px 0 12px; }
+.section-title:first-child { margin-top: 0; }
+.section-title:focus { outline: none; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px;
+  padding: 0 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface);
+  font-weight: 600; font-size: 0.9375rem; cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.btn-sm { min-height: 34px; padding: 0 12px; font-size: 0.875rem; }
+.btn-block { width: 100%; min-height: 46px; }
+@media (pointer: coarse) { .btn { min-height: 44px; } .btn-sm { min-height: 44px; } }
+.icon { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Form */
+.field { margin-bottom: 18px; }
+.field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.field-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+label { font-weight: 600; font-size: 0.9375rem; }
+label .opt { font-weight: 400; color: var(--muted); }
+textarea, input[type="text"] {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); line-height: 1.5; font-size: 1rem;
+}
+textarea { resize: vertical; min-height: 120px; display: block; }
+textarea::placeholder, input::placeholder { color: var(--muted); opacity: 0.85; }
+textarea:focus-visible, input[type="text"]:focus-visible { border-color: var(--accent); outline-offset: 0; }
+.field-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 4px; min-height: 1.2em; }
+.hint { font-size: 0.8125rem; color: var(--muted); margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hint.over { color: var(--red-text); font-weight: 600; }
+.error { font-size: 0.875rem; color: var(--red-text); }
+.error:empty { display: none; }
+#err-run { margin: -6px 0 12px; }
+
+/* Timeline */
+.status { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.status:empty { display: none; }
+.timeline { display: flex; flex-direction: column; min-height: 200px; }
+.empty { color: var(--muted); font-size: 0.9375rem; }
+.empty ol { margin: 10px 0 0; padding-left: 20px; }
+.empty li { margin: 2px 0; }
+.step { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; column-gap: 12px; padding: 10px 0; position: relative; animation: rise 0.28s ease-out both; }
+.step:not(:last-child)::after { content: ""; position: absolute; left: 15px; top: 46px; bottom: -4px; width: 2px; background: var(--border); }
+.step-icon { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.step-label { font-weight: 600; line-height: 1.35; padding-top: 4px; overflow-wrap: anywhere; }
+.step-summary { color: var(--muted); font-size: 0.9375rem; margin-top: 2px; overflow-wrap: anywhere; }
+.step-summary:empty { display: none; }
+.step-end { display: flex; align-items: center; gap: 8px; padding-top: 5px; height: 32px; }
+.step-time { font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.state { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; flex: none; }
+.state .icon { width: 14px; height: 14px; stroke-width: 2.4; }
+.step[data-state="ok"] .state { background: var(--green-bg); color: var(--green-text); }
+.step[data-state="fail"] .state { background: var(--red-bg); color: var(--red-text); }
+.step[data-state="warn"] .state { background: var(--amber-bg); color: var(--amber-text); }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 0.8s linear infinite; flex: none; }
+.issues { margin: 8px 0 0; padding: 10px 12px 10px 28px; background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber-text); border-radius: 8px; font-size: 0.875rem; }
+.issues li { margin: 3px 0; overflow-wrap: anywhere; }
+.thought { margin: 0 0 0 44px; padding: 2px 0 8px; font-style: italic; font-size: 0.9375rem; color: var(--muted); animation: rise 0.28s ease-out both; overflow-wrap: anywhere; }
+.notice { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px 44px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 0.875rem; animation: rise 0.28s ease-out both; }
+.compact .step { padding: 6px 0; }
+.compact .step::after { display: none; }
+.compact .step-icon { width: 26px; height: 26px; }
+.compact .step { grid-template-columns: 26px minmax(0, 1fr) auto; }
+.compact .step-label { font-size: 0.9375rem; padding-top: 2px; }
+.compact .thought, .compact .notice { margin-left: 38px; }
+.error-card { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; padding: 14px 16px; border-radius: 10px; background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red-text); animation: rise 0.28s ease-out both; }
+.error-card .icon { margin-top: 2px; }
+.error-card div { flex: 1 1 220px; min-width: 0; }
+.error-card p { margin-top: 2px; overflow-wrap: anywhere; }
+.error-card .btn { color: var(--red-text); border-color: var(--red-border); background: transparent; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+  .spinner { animation: none; border-top-color: var(--border); border-right-color: var(--accent); }
+}
+
+/* Results */
+.summary { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.ring { position: relative; width: 120px; height: 120px; flex: none; }
+.ring-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-svg circle { fill: none; stroke-width: 10; }
+.ring-track { stroke: var(--surface-2); }
+.ring-fill { stroke: var(--accent); stroke-linecap: round; stroke-dasharray: 326.73; stroke-dashoffset: 326.73; transition: stroke-dashoffset 1s ease-out; }
+.ring-num { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.ring-num strong { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.ring-num span { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+.summary-text { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.role { color: var(--muted); font-size: 0.9375rem; }
+.summary-p { max-width: 70ch; }
+.missing { font-size: 0.9375rem; color: var(--amber-text); background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 8px; padding: 6px 10px; }
+.chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.8125rem; font-weight: 600; line-height: 1.5; white-space: nowrap; border: 1px solid transparent; }
+.chip-good { background: var(--green-bg); color: var(--green-text); }
+.chip-warn { background: var(--amber-bg); color: var(--amber-text); }
+.chip-bad { background: var(--red-bg); color: var(--red-text); }
+.chip-accent { background: var(--accent-soft); color: var(--accent); }
+.chip-neutral { background: var(--surface-2); color: var(--muted); border-color: var(--border); }
+.box-amber { margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber-text); }
+.box-amber strong { display: block; margin-bottom: 4px; }
+.box-amber ul { margin: 6px 0 0; padding-left: 20px; }
+.box-amber li { overflow-wrap: anywhere; }
+.banner { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 14px; padding: 12px 16px; border-radius: 10px; background: var(--amber-bg); border: 1px solid var(--amber-border); color: var(--amber-text); font-weight: 500; }
+.banner .icon { margin-top: 2px; }
+mark.add { background: var(--amber-bg); color: var(--amber-text); border: 1px solid var(--amber-border); border-radius: 4px; padding: 0 4px; font-weight: 500; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+details.breakdown { margin-top: 16px; padding: 0; }
+details.breakdown > summary { cursor: pointer; padding: 14px 20px; font-weight: 600; list-style-position: inside; border-radius: 12px; }
+details.breakdown[open] > summary { border-bottom: 1px solid var(--border); border-radius: 12px 12px 0 0; }
+.table-wrap { overflow-x: auto; padding: 4px 20px 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+th { text-align: left; font-size: 0.8125rem; color: var(--muted); font-weight: 600; padding: 10px 8px; border-bottom: 1px solid var(--border); }
+td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) {
+  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  tr { display: grid; grid-template-columns: auto auto 1fr; gap: 6px 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  tr:last-child { border-bottom: 0; }
+  td { padding: 0; border: 0; }
+  td:first-child { grid-column: 1 / -1; font-weight: 600; }
+  .table-wrap { padding: 0 16px 8px; }
+}
+.list { display: grid; gap: 12px; }
+.item h3 { font-size: 1rem; font-weight: 650; }
+blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); overflow-wrap: anywhere; }
+.label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 650; margin-top: 10px; }
+.item p.body { margin-top: 2px; overflow-wrap: anywhere; }
+.qa-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.qa-head h3 { font-size: 1rem; font-weight: 650; }
+.qa-head .num { color: var(--muted); font-weight: 600; margin-right: 6px; }
+.pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 75ch; }
+
+/* Chat */
+.thread { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.thread:empty { display: none; }
+.msg { max-width: min(85%, 640px); padding: 10px 14px; border-radius: 12px; overflow-wrap: anywhere; animation: rise 0.28s ease-out both; }
+.msg p { white-space: pre-wrap; }
+.msg-user { align-self: flex-end; background: var(--accent-soft); }
+.msg-agent { align-self: flex-start; background: var(--surface-2); border: 1px solid var(--border); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chat-form { display: flex; gap: 8px; }
+.chat-form input { min-height: 44px; flex: 1; }
+.chat-form .btn { min-height: 44px; }
+#err-chat { margin-top: 8px; }
+
+.foot { padding-top: 24px; padding-bottom: 32px; color: var(--muted); font-size: 0.875rem; }
+@media (max-width: 480px) {
+  .card { padding: 16px; }
+  .summary { gap: 16px; }
+  .msg { max-width: 94%; }
+}
+</style>
 </head>
 <body>
-  <h1>Job Application Agent</h1>
-  <p>Skeleton only. Features coming soon.</p>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3.2 3 14.8 0 18"/><path d="M12 3c-3 3.2-3 14.8 0 18"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V5l8-2v18"/><path d="M12 9h8v12"/><path d="M8 8v.01M8 12v.01M8 16v.01M16 13v.01M16 17v.01"/></symbol>
+  <symbol id="i-calc" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8"/><path d="M8 12v.01M12 12v.01M16 12v.01M8 16v.01M12 16v.01M16 16v.01"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/><path d="M8 20v-6h8v6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-cross" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4.5"/><path d="M12 17.5v.01"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12 20 4l-5 16-3-7z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></symbol>
+</svg>
+
+<!-- Cloned by the script, so no SVG is ever built from strings -->
+<template id="tpl-icon"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-check"></use></svg></template>
+<template id="tpl-ring"><svg class="ring-svg" viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="52"></circle><circle class="ring-fill" cx="60" cy="60" r="52"></circle></svg></template>
+
+<header class="top">
+  <div class="wrap top-inner">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><h1>Job Application Agent</h1></div>
+    <p class="badge" id="badge" role="status">Connecting…</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="grid">
+    <section class="card" aria-labelledby="inputs-title">
+      <h2 id="inputs-title" style="margin-bottom:16px">Your application</h2>
+      <form id="run-form" novalidate>
+        <div class="field">
+          <div class="field-head">
+            <label for="resume">Resume</label>
+            <div class="field-actions">
+              <button type="button" class="btn btn-sm" id="btn-upload"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-upload"></use></svg>Upload PDF/TXT</button>
+              <button type="button" class="btn btn-sm" id="btn-sample">Use sample data</button>
+            </div>
+          </div>
+          <input type="file" id="file" accept=".pdf,.txt,.md,application/pdf,text/plain" hidden aria-label="Upload a resume file">
+          <textarea id="resume" rows="9" placeholder="Paste your resume text, or upload a PDF or TXT file" aria-describedby="err-resume hint-resume"></textarea>
+          <div class="field-foot"><p class="error" id="err-resume" role="alert"></p><span class="hint" id="hint-resume"></span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><label for="job">Job post</label></div>
+          <textarea id="job" rows="7" placeholder="Paste the job description or a link" aria-describedby="err-job hint-job"></textarea>
+          <div class="field-foot"><p class="error" id="err-job" role="alert"></p><span class="hint" id="hint-job"></span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><label for="questions">Application questions <span class="opt">(optional, one per line)</span></label></div>
+          <textarea id="questions" rows="4" placeholder="Why do you want to join us?&#10;Tell us about a project you are proud of." aria-describedby="err-questions"></textarea>
+          <div class="field-foot"><p class="error" id="err-questions" role="alert"></p></div>
+        </div>
+
+        <p class="error" id="err-run" role="alert"></p>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-run">Run agent</button>
+      </form>
+    </section>
+
+    <section class="card" aria-labelledby="activity-title">
+      <div class="card-head">
+        <h2 id="activity-title">Agent activity</h2>
+        <p class="status" id="status"></p>
+      </div>
+      <div class="timeline" id="timeline" role="log" aria-live="polite" aria-relevant="additions text" aria-busy="false">
+        <div class="empty" id="empty">
+          <p>Your run will appear here, step by step. The agent will:</p>
+          <ol>
+            <li>Read the job post (and fetch it if you pasted a link)</li>
+            <li>Look up the company</li>
+            <li>Check your resume against the requirements</li>
+            <li>Calculate your fit score</li>
+            <li>Draft your answers and a cover note</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section id="results" hidden aria-labelledby="results-title"></section>
+
+  <section class="card" id="chat" hidden aria-labelledby="chat-title" style="margin-top:32px">
+    <div class="card-head">
+      <h2 id="chat-title">Ask for changes</h2>
+      <p class="status" id="chat-status"></p>
+    </div>
+    <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions text"></div>
+    <div class="chips" id="chips"></div>
+    <form class="chat-form" id="chat-form" novalidate>
+      <label for="chat-input" class="sr-only">Message to the agent</label>
+      <input type="text" id="chat-input" maxlength="2000" autocomplete="off" placeholder="Ask for changes, e.g. make answer 2 shorter">
+      <button type="submit" class="btn btn-primary" id="chat-send"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-send"></use></svg>Send</button>
+    </form>
+    <p class="error" id="err-chat" role="alert"></p>
+  </section>
+</main>
+
+<footer class="wrap foot"><p id="privacy">Everything runs on your machine.</p></footer>
+<p class="sr-only" id="sr-status" role="status" aria-live="polite"></p>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const RING_LENGTH = 326.73; // circumference of the ring (r = 52)
+  const SUGGESTIONS = ["Make answer 2 shorter", "Shorten the cover note", "Which gap should I fix first?"];
+  const TOOL_ICONS = {
+    fetch_webpage: "globe", lookup_company: "building", check_resume_for: "search",
+    calculate_fit_score: "calc", save_application_pack: "save",
+  };
+
+  // All DOM is built with this helper. Text always goes in as text nodes (never parsed as HTML).
+  function el(tag, props, ...kids) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props || {})) {
+      if (key === "class") node.className = value;
+      else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+      else if (value === true) node.setAttribute(key, "");
+      else if (value !== false && value != null) node.setAttribute(key, value);
+    }
+    for (const kid of kids.flat()) if (kid != null) node.append(kid);
+    return node;
+  }
+
+  function icon(name) {
+    const svg = $("tpl-icon").content.firstElementChild.cloneNode(true);
+    svg.querySelector("use").setAttribute("href", "#i-" + name);
+    return svg;
+  }
+
+  const state = {
+    sessionId: null, running: false, stream: null, pack: null, last: null,
+    turnMax: 0, startedAt: 0, ticker: null, statusEl: null, scrollToResults: false,
+  };
+  let view = null; // where the current turn's events are drawn
+
+  // ---------- small helpers ----------
+  const seconds = (n) => (n < 0.1 ? "<0.1s" : n.toFixed(1) + "s");
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  function announce(text) { $("sr-status").textContent = ""; setTimeout(() => { $("sr-status").textContent = text; }, 50); }
+
+  function setStatus(target, text, busy) {
+    target.replaceChildren(...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" }), text] : [text]));
+  }
+
+  // Wraps every [ADD: ...] placeholder in an amber <mark>
+  function withPlaceholders(text) {
+    const parts = [];
+    const pattern = /\[ADD:[^\]]*\]/g;
+    let last = 0, match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > last) parts.push(text.slice(last, match.index));
+      parts.push(el("mark", { class: "add" }, match[0]));
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) parts.push(text.slice(last));
+    return parts;
+  }
+
+  async function copyText(text, button) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const box = el("textarea", { "aria-hidden": "true", style: "position:fixed;opacity:0" });
+      box.value = text;
+      document.body.append(box);
+      box.select();
+      try { document.execCommand("copy"); } catch { /* nothing more we can do */ }
+      box.remove();
+    }
+    const label = button.lastChild;
+    const before = label.textContent;
+    label.textContent = "Copied";
+    announce("Copied to clipboard");
+    setTimeout(() => { label.textContent = before; }, 1600);
+  }
+
+  function copyButton(getText) {
+    const button = el("button", { type: "button", class: "btn btn-sm" }, icon("copy"), "Copy");
+    button.addEventListener("click", () => copyText(getText(), button));
+    return button;
+  }
+
+  // ---------- header, privacy line ----------
+  async function loadConfig() {
+    const badge = $("badge");
+    try {
+      const config = await (await fetch("/api/config")).json();
+      if (config.fake) {
+        badge.dataset.mode = "demo";
+        badge.textContent = "Demo mode · runs on your machine";
+        $("privacy").textContent = "Demo mode: no model is called and nothing is sent anywhere. Everything runs on your machine.";
+      } else {
+        badge.textContent = `Running on ${config.model} · runs on your machine`;
+        $("privacy").textContent = config.provider === "ollama"
+          ? "Everything runs on your machine, including the model. Nothing leaves your computer."
+          : `Everything runs on your machine. Only the text you submit is sent to ${config.provider} to write your application pack.`;
+      }
+    } catch {
+      badge.dataset.mode = "offline";
+      badge.textContent = "Cannot reach the local server";
+    }
+  }
+
+  // ---------- inputs ----------
+  const FIELD_LIMIT = 30000;
+  function updateHint(id, hintId) {
+    const length = $(id).value.length;
+    const hint = $(hintId);
+    hint.textContent = length ? `${length.toLocaleString()} / ${FIELD_LIMIT.toLocaleString()}` : "";
+    hint.classList.toggle("over", length > FIELD_LIMIT);
+  }
+  $("resume").addEventListener("input", () => updateHint("resume", "hint-resume"));
+  $("job").addEventListener("input", () => updateHint("job", "hint-job"));
+
+  function clearErrors() {
+    for (const id of ["err-resume", "err-job", "err-questions", "err-run", "err-chat"]) $(id).textContent = "";
+  }
+
+  // Show an API error under the field it is about
+  function showApiError(detail) {
+    const message = typeof detail === "string" ? detail : "Something is wrong with what you entered.";
+    const text = message.toLowerCase();
+    let target = "err-run";
+    if (/question/.test(text)) target = "err-questions";
+    else if (/resume/.test(text) && /job post/.test(text)) target = "err-run";
+    else if (/resume/.test(text)) target = "err-resume";
+    else if (/job post/.test(text)) target = "err-job";
+    $(target).textContent = message;
+    const field = { "err-resume": "resume", "err-job": "job", "err-questions": "questions" }[target];
+    if (field) $(field).focus();
+  }
+
+  $("btn-upload").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", async () => {
+    const file = $("file").files[0];
+    $("file").value = "";
+    if (!file) return;
+    $("err-resume").textContent = "";
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const response = await fetch("/api/extract-resume", { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { $("err-resume").textContent = data.detail || "Could not read that file."; return; }
+      $("resume").value = data.text;
+      updateHint("resume", "hint-resume");
+      announce(`Loaded ${data.filename}`);
+    } catch {
+      $("err-resume").textContent = "Could not reach the local server.";
+    }
+  });
+
+  $("btn-sample").addEventListener("click", async () => {
+    try {
+      const sample = await (await fetch("/api/sample")).json();
+      $("resume").value = sample.resume;
+      $("job").value = sample.job;
+      $("questions").value = sample.questions.join("\n");
+      updateHint("resume", "hint-resume");
+      updateHint("job", "hint-job");
+      clearErrors();
+    } catch {
+      $("err-run").textContent = "Could not load the sample data.";
+    }
+  });
+
+  // ---------- running ----------
+  function setRunning(running) {
+    state.running = running;
+    $("btn-run").disabled = running;
+    $("btn-run").textContent = running ? "Running…" : "Run agent";
+    $("timeline").setAttribute("aria-busy", String(running));
+    const chatReady = !running && state.pack !== null;
+    for (const id of ["chat-input", "chat-send"]) $(id).disabled = !chatReady;
+    for (const chip of $("chips").children) chip.disabled = !chatReady;
+  }
+
+  function startTicker(statusEl) {
+    stopTicker();
+    state.statusEl = statusEl;
+    state.startedAt = performance.now();
+    const tick = () => setStatus(statusEl, `Working… ${Math.floor((performance.now() - state.startedAt) / 1000)}s`, true);
+    tick();
+    state.ticker = setInterval(tick, 500);
+  }
+  function stopTicker() { clearInterval(state.ticker); state.ticker = null; }
+
+  function closeStream() { if (state.stream) { state.stream.close(); state.stream = null; } }
+
+  async function startRun() {
+    if (state.running) return;
+    clearErrors();
+    const body = {
+      resume: $("resume").value, job: $("job").value,
+      questions: $("questions").value.split("\n").map((q) => q.trim()).filter(Boolean),
+    };
+    setRunning(true);
+    let data = {};
+    try {
+      const response = await fetch("/api/run", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) { setRunning(false); showApiError(data.detail); return; }
+    } catch {
+      setRunning(false);
+      $("err-run").textContent = "Could not reach the local server. Is it still running?";
+      return;
+    }
+
+    // Fresh page state for a new run
+    closeStream();
+    state.sessionId = data.session_id;
+    state.pack = null;
+    state.last = { kind: "run" };
+    state.scrollToResults = true;
+    $("results").replaceChildren();
+    $("results").hidden = true;
+    $("chat").hidden = true;
+    $("thread").replaceChildren();
+    $("chat-status").replaceChildren();
+    $("timeline").replaceChildren();
+    view = { container: $("timeline"), rows: new Map(), compact: false };
+    setRunning(true);
+    startTicker($("status"));
+    state.turnMax = 0;
+    openStream(0);
+  }
+
+  function openStream(after) {
+    closeStream();
+    const source = new EventSource(`/api/stream/${encodeURIComponent(state.sessionId)}?after=${after}`);
+    state.stream = source;
+    let failures = 0;
+    source.onmessage = (message) => {
+      failures = 0;
+      handleEvent(JSON.parse(message.data));
+    };
+    source.onerror = () => {
+      // The browser reconnects by itself (and resumes after the last event id). Give up after 3 tries.
+      failures += 1;
+      if (failures >= 3 && state.stream === source) {
+        handleEvent({ type: "error", message: "The connection to the local server was lost." });
+      }
+    };
+  }
+
+  // ---------- events -> timeline ----------
+  function addToView(node) {
+    view.container.append(node);
+    node.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  function handleEvent(event) {
+    state.turnMax = Math.max(state.turnMax, event.t || 0);
+    switch (event.type) {
+      case "thought":
+        addToView(el("p", { class: "thought" }, event.text));
+        break;
+      case "wait":
+        addToView(el("p", { class: "notice" }, icon("clock"), el("span", {}, event.message)));
+        break;
+      case "tool_start":
+        startStep(event);
+        break;
+      case "tool_end":
+        endStep(event);
+        break;
+      case "reply":
+        addBubble("agent", event.text);
+        break;
+      case "result":
+        showResults(event.pack);
+        break;
+      case "error":
+        addToView(errorCard(event.message));
+        finishTurn(false);
+        break;
+      case "done":
+        finishTurn(true, event);
+        break;
+    }
+  }
+
+  function startStep(event) {
+    const row = {
+      t: event.t,
+      icon: el("span", { class: "step-icon" }, icon(TOOL_ICONS[event.name] || "wand")),
+      label: el("p", { class: "step-label" }, event.label || event.name),
+      summary: el("p", { class: "step-summary" }),
+      time: el("span", { class: "step-time" }),
+      state: el("span", { class: "state" }, el("span", { class: "spinner", "aria-hidden": "true" })),
+    };
+    row.body = el("div", {}, row.label, row.summary);
+    row.node = el("div", { class: "step", "data-state": "running" },
+      row.icon, row.body, el("div", { class: "step-end" }, row.time, row.state));
+    view.rows.set(event.call_id, row);
+    addToView(row.node);
+  }
+
+  function endStep(event) {
+    let row = view.rows.get(event.call_id);
+    if (!row) { startStep({ ...event, label: event.name, t: event.t }); row = view.rows.get(event.call_id); }
+    const rejected = Array.isArray(event.issues) && event.issues.length > 0;
+    const outcome = rejected ? "warn" : event.ok ? "ok" : "fail";
+    const words = { ok: "Completed", fail: "Failed", warn: "Needs fixes" }[outcome];
+    row.node.dataset.state = outcome;
+    row.state.replaceChildren(icon({ ok: "check", fail: "cross", warn: "warn" }[outcome]), el("span", { class: "sr-only" }, words));
+    row.summary.textContent = event.summary || "";
+    row.time.textContent = seconds(Math.max(0, event.t - row.t));
+    if (rejected) {
+      row.body.append(el("ul", { class: "issues", "aria-label": "Honesty check issues" }, event.issues.map((issue) => el("li", {}, issue))));
+    }
+  }
+
+  function errorCard(message) {
+    return el("div", { class: "error-card", role: "alert" },
+      icon("warn"),
+      el("div", {}, el("strong", {}, "Something went wrong"), el("p", {}, message)),
+      el("button", { type: "button", class: "btn btn-sm", onclick: (e) => { e.currentTarget.closest(".error-card").remove(); retry(); } },
+        icon("refresh"), "Try again"));
+  }
+
+  function retry() {
+    if (state.last && state.last.kind === "chat") sendChat(state.last.message);
+    else startRun();
+  }
+
+  function finishTurn(ok, event) {
+    stopTicker();
+    closeStream();
+    const target = state.statusEl || $("status");
+    setStatus(target, ok
+      ? `Finished in ${state.turnMax.toFixed(1)}s · ${plural(event.model_calls, "model call")}`
+      : "Stopped with an error", false);
+    setRunning(false);
+    if (ok) announce("The agent has finished.");
+  }
+
+  // ---------- results ----------
+  const MATCH_KIND = { strong: "good", partial: "warn", missing: "bad" };
+  const VERDICT_KIND = { "Strong fit": "good", "Good fit with gaps": "warn" };
+
+  function ring(score) {
+    const svg = $("tpl-ring").content.firstElementChild.cloneNode(true);
+    const fill = svg.querySelector(".ring-fill");
+    // Two frames later, so the browser animates from the empty ring
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      fill.style.strokeDashoffset = String(RING_LENGTH * (1 - score / 100));
+    }));
+    return el("div", { class: "ring", role: "img", "aria-label": `Fit score ${score} out of 100` },
+      svg, el("div", { class: "ring-num", "aria-hidden": "true" }, el("strong", {}, String(score)), el("span", {}, "/100")));
+  }
+
+  function breakdown(rows) {
+    const head = el("thead", {}, el("tr", {},
+      el("th", {}, "Requirement"), el("th", {}, "Weight"), el("th", {}, "Match"), el("th", { class: "num" }, "Points")));
+    const body = el("tbody", {}, rows.map((row) => el("tr", {},
+      el("td", {}, row.requirement),
+      el("td", {}, el("span", { class: "chip " + (row.importance === "must" ? "chip-accent" : "chip-neutral") }, row.importance === "must" ? "Must" : "Nice")),
+      el("td", {}, el("span", { class: "chip chip-" + (MATCH_KIND[row.match] || "neutral") }, capital(row.match))),
+      el("td", { class: "num" }, `${row.points} / ${row.possible}`))));
+    return el("details", { class: "card breakdown" },
+      el("summary", {}, `Score breakdown (${plural(rows.length, "requirement")})`),
+      el("div", { class: "table-wrap" }, el("table", {}, head, body)));
+  }
+
+  function showResults(pack) {
+    state.pack = pack;
+    const results = $("results");
+    const heading = el("h2", { class: "section-title", id: "results-title", tabindex: "-1" }, "Your application pack");
+
+    const summary = el("div", { class: "card summary" },
+      ring(pack.score),
+      el("div", { class: "summary-text" },
+        el("p", { class: "role" }, `${pack.role} · ${pack.company}`),
+        el("span", { class: "chip chip-" + (VERDICT_KIND[pack.verdict] || "bad") }, pack.verdict),
+        el("p", { class: "summary-p" }, pack.summary),
+        pack.missing_must_haves.length
+          ? el("p", { class: "missing" }, "Missing must-haves: " + pack.missing_must_haves.join(", "))
+          : null));
+
+    const warnings = (pack.warnings || []).length
+      ? el("div", { class: "box-amber", role: "note" },
+          el("strong", {}, "Honesty check warnings"),
+          el("p", {}, "The agent could not fix these automatically. Check each one before you send anything."),
+          el("ul", {}, pack.warnings.map((w) => el("li", {}, w))))
+      : null;
+
+    const strengths = el("div", { class: "list" }, pack.strengths.map((s) =>
+      el("div", { class: "card item" }, el("h3", {}, s.strength),
+        el("div", { class: "label" }, "From your resume"), el("blockquote", {}, s.evidence))));
+
+    const gaps = el("div", { class: "list" }, pack.gaps.map((g) =>
+      el("div", { class: "card item" }, el("h3", {}, g.gap),
+        el("div", { class: "label" }, "How to address"), el("p", { class: "body" }, g.how_to_address))));
+
+    const banner = el("div", { class: "banner", role: "note" }, icon("warn"),
+      el("span", {}, "Draft: check every sentence before you send it. Fill in the highlighted [ADD] parts with your own true details."));
+
+    const answers = el("div", { class: "list" }, pack.answers.map((a, i) =>
+      el("div", { class: "card item" },
+        el("div", { class: "qa-head" }, el("h3", {}, el("span", { class: "num" }, `Q${i + 1}`), a.question), copyButton(() => a.answer)),
+        el("p", { class: "pre" }, withPlaceholders(a.answer)))));
+
+    const cover = el("div", { class: "card item" },
+      el("div", { class: "qa-head" }, el("h3", {}, "Cover note"), copyButton(() => pack.cover_note)),
+      el("p", { class: "pre" }, withPlaceholders(pack.cover_note)));
+
+    results.replaceChildren(...[
+      heading, summary, warnings, breakdown(pack.breakdown),
+      el("h2", { class: "section-title" }, "Strengths"), strengths,
+      el("h2", { class: "section-title" }, "Gaps and how to address them"), gaps,
+      el("h2", { class: "section-title" }, "Draft answers"), banner, answers,
+      el("h2", { class: "section-title" }, "Cover note"), cover,
+    ].filter(Boolean)); // warnings is null when there are none
+    results.hidden = false;
+    $("chat").hidden = false;
+    if (state.scrollToResults) {
+      state.scrollToResults = false;
+      heading.focus({ preventScroll: true });
+      heading.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+    }
+    setRunning(state.running); // enables the chat box once the turn ends
+  }
+
+  // ---------- follow-up chat ----------
+  function addBubble(who, text) {
+    const bubble = el("div", { class: "msg msg-" + who }, el("p", {}, text));
+    $("thread").append(bubble);
+    bubble.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  async function sendChat(message) {
+    if (state.running || !state.pack) return;
+    $("err-chat").textContent = "";
+    setRunning(true);
+    let data = {};
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: state.sessionId, message }),
+      });
+      data = await response.json().catch(() => ({}));
+      if (!response.ok) { setRunning(false); $("err-chat").textContent = data.detail || "Could not send that message."; return; }
+    } catch {
+      setRunning(false);
+      $("err-chat").textContent = "Could not reach the local server.";
+      return;
+    }
+    state.last = { kind: "chat", message };
+    addBubble("user", message);
+    $("chat-input").value = "";
+    const thread = el("div", { class: "compact" });
+    $("thread").append(thread);
+    view = { container: thread, rows: new Map(), compact: true };
+    state.turnMax = 0;
+    startTicker($("chat-status"));
+    openStream(data.after);
+  }
+
+  $("chat-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const message = $("chat-input").value.trim();
+    if (message) sendChat(message);
+  });
+  for (const text of SUGGESTIONS) {
+    $("chips").append(el("button", { type: "button", class: "btn btn-sm", disabled: true, onclick: () => { $("chat-input").value = text; $("chat-input").focus(); } }, text));
+  }
+
+  $("run-form").addEventListener("submit", (event) => { event.preventDefault(); startRun(); });
+
+  setRunning(false);
+  loadConfig();
+})();
+</script>
 </body>
 </html>

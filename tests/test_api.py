@@ -254,3 +254,16 @@ def test_extract_rejects_bad_uploads(client):
     ]
     for response, expected in cases:
         assert response.status_code == 400 and expected in response.json()["detail"], expected
+
+
+# --- the page itself ----------------------------------------------------------------------
+
+def test_index_page_is_the_ui(client):
+    page = client.get("/").text
+    for needle in ['id="btn-run"', "Run agent", 'id="timeline"', 'id="results"', 'id="chat-form"',
+                   "Use sample data", "Upload PDF/TXT", "/api/stream/", "/api/extract-resume"]:
+        assert needle in page, needle
+    # Privacy: the page must never load anything from the internet (no CDNs, fonts, analytics)
+    assert "http://" not in page and "https://" not in page
+    # Safety: model and user text is only ever inserted as text, never parsed as HTML
+    assert "innerHTML" not in page and "insertAdjacentHTML" not in page and "document.write" not in page

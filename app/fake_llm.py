@@ -7,7 +7,9 @@ script exact sequences.
 """
 import itertools
 import json
+import os
 import re
+import time
 
 from litellm import Message, ModelResponse
 from litellm.types.utils import ChatCompletionMessageToolCall, Function
@@ -147,6 +149,8 @@ def _called_tools(message) -> list[tuple[str, str]]:
 
 
 def respond(history: list, tools: list | None, tool_choice: dict | None) -> ModelResponse:
+    # FAKE_DELAY=1 makes demo mode feel like a real model (the UI timeline shows its spinners)
+    time.sleep(float(os.getenv("FAKE_DELAY") or 0))
     # The request this run is answering: the last user message the loop did not write itself
     start = max(i for i, m in enumerate(history)
                 if _get(m, "role") == "user" and not (_get(m, "content") or "").startswith(AUTO_PREFIX))
