@@ -51,7 +51,7 @@ The system prompt forbids inventing experience, and `save_application_pack` back
 ## Privacy
 
 - The server binds to `127.0.0.1:8000` only, and rejects requests whose `Host` header isn't `127.0.0.1` or `localhost` (against DNS-rebinding from other websites).
-- No database, accounts or analytics. Sessions live in memory and disappear when you stop the app. The app doesn't write your resume or the pack to disk.
+- No database, accounts or analytics. Sessions live in memory and disappear when you stop the app. The app's own code never writes your resume or the pack to disk. (One caveat: the web framework may spool an uploaded file larger than 1 MB to a temporary file while receiving it; the app reads it into memory and doesn't keep it.)
 - What leaves your machine: the text you submit goes to **the model provider you chose**. Two optional tools also make web requests: `fetch_webpage` fetches the job-post URL if you pasted a link, and `lookup_company` sends the company name to Wikipedia. With a local Ollama model the model call stays on your machine; those two tools are the only network use, and neither sends your resume.
 - Secrets live in `.env`, which is git-ignored.
 
