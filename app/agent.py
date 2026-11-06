@@ -58,9 +58,14 @@ with placeholders is better than a complete story that is partly invented.
 N+1 queries"): "I profiled the endpoint, documented the fix and added regression tests."
   GOOD: "I brought a slow reporting endpoint from about 9s to under 2s by adding indexes and removing \
 N+1 queries. [ADD: who asked for it and how you decided what to fix.]"
-- Do not state feelings, preferences or motivations the resume does not show ("my favorite project", \
-"I thrive in small teams"). For "why this company" you may connect the job post's own words to \
-resume facts, and must add [ADD: your own reason] for the personal part.
+- Motivations, feelings and preferences come ONLY from the candidate, so they are ALWAYS an [ADD: ...] \
+placeholder unless the resume itself states them. Never write "I enjoy", "I love", "excited", \
+"passionate", "thrive", "my favourite" or "dream" outside a placeholder. For "why this company" you may \
+connect the job post's own words to resume facts, and add [ADD: your own reason] for the personal part.
+- save_application_pack runs an automatic honesty check and refuses to save if: a strength's evidence is \
+not an exact quote from the resume; any number (also in gap fixes) is not in the resume or job post, so \
+describe amounts without numbers or use [ADD: ...]; or a feeling is written outside a placeholder. If it \
+returns issues, fix exactly those and call it again with the FULL pack.
 - Placeholders are normal and expected. A pack with several [ADD: ...] is better than a pack that sounds \
 complete but is not true.
 - Copy each application question exactly as given, without the leading number.
@@ -91,6 +96,7 @@ class Session:
     events: list = field(default_factory=list)   # append-only log for the UI
     status: str = "idle"      # idle | running | done | error
     model_calls: int = 0
+    honesty_rejections: int = 0  # saves rejected by the honesty check in this turn
     turn_started: float = 0.0  # time.monotonic() when the current turn began
     # The web server reads events from another thread, so access goes through the lock
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
@@ -126,6 +132,7 @@ def run_turn(session: Session, user_message: str) -> None:
     """
     session.status = "running"
     session.turn_started = time.monotonic()
+    session.honesty_rejections = 0
     session.history.append({"role": "user", "content": user_message})
     try:
         _loop(session)
@@ -148,6 +155,9 @@ def _loop(session: Session) -> None:
             # Always make progress: score first, then save
             name = "calculate_fit_score" if session.fit is None else "save_application_pack"
             choice = {"type": "function", "function": {"name": name}}
+            if name == "save_application_pack":
+                # Last chance: the honesty check must save now (with warnings), not reject again
+                session.honesty_rejections = tools.MAX_HONESTY_REJECTIONS
 
         response = llm.chat(SYSTEM_PROMPT, session.history, tools.SCHEMAS,
                             on_wait=lambda msg: session.add_event("wait", message=msg),
@@ -208,8 +218,9 @@ def _run_tool_calls(session: Session, calls: list) -> bool:
             result = {"error": "Arguments must be a valid JSON object."}
         else:
             result = tools.run_tool(session, name, args)
+        extra = {"issues": result["issues"]} if "issues" in result else {}  # honesty-check rejections
         session.add_event("tool_end", call_id=call.id, name=name, ok="error" not in result,
-                          summary=tools.summary_for(name, result))
+                          summary=tools.summary_for(name, result), **extra)
 
         # Every tool call needs a matching tool message, or the next model call is rejected
         session.history.append({"role": "tool", "tool_call_id": call.id, "name": name,

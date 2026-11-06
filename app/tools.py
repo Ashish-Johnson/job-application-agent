@@ -27,6 +27,13 @@ MAX_PAGE_CHARS = 8000
 MIN_PAGE_CHARS = 200
 MAX_REDIRECTS = 3
 
+MAX_HONESTY_REJECTIONS = 2  # rejected saves per turn; after that we save with warnings
+
+# Feelings and motivations only the candidate can supply. Allowed only inside an
+# [ADD: ...] placeholder, unless the resume itself contains the phrase.
+FEELING_PHRASES = ["I enjoy", "I love", "excited", "passionate", "thrive",
+                   "my favourite", "my favorite", "dream"]
+
 IMPORTANCE_WEIGHT = {"must": 2, "nice": 1}
 MATCH_CREDIT = {"strong": 1, "partial": 0.5, "missing": 0}
 
@@ -181,21 +188,92 @@ def _strip_question_numbers(answers: list) -> list:
             for a in answers]
 
 
+def _norm(text: str) -> str:
+    """Lowercase, straighten curly quotes, collapse whitespace."""
+    text = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    return " ".join(text.lower().split())
+
+
+def _numbers(text: str) -> set[str]:
+    return {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)*", text)}
+
+
+def _around(text: str, match: re.Match) -> str:
+    return " ".join(text[max(0, match.start() - 25):match.end() + 25].split())
+
+
+def honesty_issues(session, fields: dict) -> list[str]:
+    """Deterministic checks on a pack before it is saved. Returns specific, fixable issues."""
+    issues = []
+    resume = _norm(session.resume_text)
+    allowed_numbers = _numbers(session.resume_text) | _numbers(session.job_text)
+
+    # 1. Every strength's evidence must be a real quote from the resume
+    for i, item in enumerate(fields["strengths"], 1):
+        evidence = item.get("evidence", "") if isinstance(item, dict) else ""
+        # "..." lets the model skip words inside one quote; each piece must still match
+        pieces = [_norm(p).strip(" \"'-•") for p in re.split(r"\.\.\.|…", evidence)]
+        pieces = [p for p in pieces if p]
+        if not pieces or not all(p in resume for p in pieces):
+            issues.append(f'Strength {i}: the evidence is not a quote from the resume: "{evidence[:80]}". '
+                          "Copy the resume text exactly.")
+
+    # 2 and 3. Numbers and feelings in everything the candidate would say or send
+    texts = [("summary", fields["summary"]), ("cover note", fields["cover_note"])]
+    for i, item in enumerate(fields["strengths"], 1):
+        texts.append((f"strength {i}", item.get("strength", "") if isinstance(item, dict) else ""))
+    for i, item in enumerate(fields["gaps"], 1):
+        for key in ("gap", "how_to_address"):
+            texts.append((f"gap {i} ({key})", item.get(key, "") if isinstance(item, dict) else ""))
+    for i, item in enumerate(fields["answers"], 1):
+        texts.append((f"answer {i}", item.get("answer", "") if isinstance(item, dict) else ""))
+
+    for label, text in texts:
+        text = re.sub(r"\[ADD:[^\]]*\]", " ", str(text))  # placeholders may hold anything
+        reported = set()
+        for match in re.finditer(r"\d+(?:[.,]\d+)*", text):
+            number = match.group().replace(",", "")
+            if number not in allowed_numbers and number not in reported:
+                reported.add(number)
+                issues.append(f'{label}: the number "{number}" is not in the resume or job post '
+                              f'(in "...{_around(text, match)}..."). Remove it or use an [ADD: ...] placeholder.')
+        for phrase in FEELING_PHRASES:
+            match = re.search(r"\b" + re.escape(phrase), text, re.IGNORECASE)
+            if match and _norm(phrase) not in resume:
+                issues.append(f'{label}: "{phrase}" states a feeling or motivation the resume does not '
+                              f'support (in "...{_around(text, match)}..."). Only the candidate can supply '
+                              "that: replace it with an [ADD: ...] placeholder.")
+    return issues[:15]
+
+
 def save_application_pack(session, role: str, company: str, summary: str, strengths: list,
                           gaps: list, answers: list, cover_note: str) -> dict:
     if session.fit is None:
         return {"error": "No fit score yet. Call calculate_fit_score first, then save the pack."}
+    answers = _strip_question_numbers(answers)
+    fields = {"summary": summary, "cover_note": cover_note,
+              "strengths": strengths, "gaps": gaps, "answers": answers}
+
+    issues = honesty_issues(session, fields)
+    if issues and session.honesty_rejections < MAX_HONESTY_REJECTIONS:
+        session.honesty_rejections += 1
+        return {"error": f"Honesty check failed with {len(issues)} issue(s); nothing was saved. "
+                         "Fix exactly these and call save_application_pack again with the FULL pack.",
+                "issues": issues}
+
     session.pack = {
         "role": role, "company": company, "summary": summary,
-        "strengths": strengths, "gaps": gaps, "answers": _strip_question_numbers(answers),
-        "cover_note": cover_note,
+        "strengths": strengths, "gaps": gaps, "answers": answers, "cover_note": cover_note,
         # Always taken from the calculator, never from the model, so the score can't be invented.
         "score": session.fit["score"],
         "verdict": session.fit["verdict"],
         "missing_must_haves": session.fit["missing_must_haves"],
         "breakdown": session.fit["breakdown"],
+        # Issues left after the retries ran out; the UI shows them to the user
+        "warnings": issues,
     }
-    return {"saved": True, "score": session.fit["score"], "verdict": session.fit["verdict"]}
+    return {"saved": True, "score": session.fit["score"], "verdict": session.fit["verdict"],
+            "warnings": len(issues)}
 
 
 # --- Dispatch and UI text ----------------------------------------------------
@@ -244,7 +322,8 @@ SUMMARIES = {
     "lookup_company": lambda r: f"Found: {r['title']}" if r["found"] else "No Wikipedia page found",
     "check_resume_for": _summary_check_resume,
     "calculate_fit_score": lambda r: f"{r['score']}/100 · {r['verdict']}",
-    "save_application_pack": lambda r: "Application pack saved",
+    "save_application_pack": lambda r: "Application pack saved" + (
+        f" with {r['warnings']} warning(s)" if r.get("warnings") else ""),
 }
 
 
@@ -256,6 +335,9 @@ def label_for(name: str, args: dict) -> str:
 
 
 def summary_for(name: str, result: dict) -> str:
+    if "issues" in result:
+        n = len(result["issues"])
+        return f"Honesty check: {n} issue{'s' if n != 1 else ''}, asking the agent to fix {'them' if n != 1 else 'it'}"
     if "error" in result:
         return f"Failed: {result['error']}"
     try:
@@ -320,7 +402,12 @@ SCHEMAS = [
         "Every claim about the candidate must come from the resume; where a fact is missing "
         "write a placeholder like [ADD: metric for this achievement] instead of inventing it. "
         "Include a drafted answer for every application question and a short cover note. "
-        "Do not include a score: it is attached automatically.",
+        "Do not include a score: it is attached automatically. An automatic honesty check runs "
+        "first and rejects the save, returning a list of issues, if a strength's evidence is not an "
+        "exact quote from the resume, if any number is not in the resume or job post (including in "
+        "gap fixes: describe without numbers or use [ADD: ...]), or if a feeling or motivation "
+        "('I enjoy', 'excited', 'passionate'...) is written outside an [ADD: ...] placeholder. "
+        "If issues come back, fix exactly those and call this tool again with the full pack.",
         {"role": {"type": "string"},
          "company": {"type": "string"},
          "summary": {"type": "string", "description": "2-3 sentence overview of the fit."},

@@ -54,7 +54,7 @@ PACK = {
     ],
     "gaps": [
         {"gap": "No experience evaluating LLM output quality",
-         "how_to_address": "Build a small test set of 20 delivery emails with the expected bookings, "
+         "how_to_address": "Build a small test set of real delivery emails with the expected bookings, "
                            "score the parser against it, and mention the result [ADD: accuracy you measure]."},
         {"gap": "No fintech or payments background",
          "how_to_address": "Say so plainly, point to the structured-data work you did in logistics, "

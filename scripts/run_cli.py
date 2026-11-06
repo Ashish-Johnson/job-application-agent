@@ -20,6 +20,8 @@ def show(event: dict) -> None:
         print(f"{stamp}   -> {event['label']}")
     elif kind == "tool_end":
         print(f"{stamp}   {'ok' if event['ok'] else 'FAILED'}: {event['summary']}")
+        for issue in event.get("issues", []):
+            print(f"{stamp}       - {issue}")
     elif kind == "wait":
         print(f"{stamp} WAIT: {event['message']}")
     elif kind == "reply":
@@ -42,6 +44,8 @@ def show_pack(pack: dict) -> None:
     for i, a in enumerate(pack["answers"], 1):
         print(f"\nQ{i}. {a['question']}\n{a['answer']}")
     print(f"\nCover note:\n{pack['cover_note']}")
+    for warning in pack.get("warnings", []):
+        print(f"\nWARNING (left after honesty-check retries): {warning}")
 
 
 def main() -> int:

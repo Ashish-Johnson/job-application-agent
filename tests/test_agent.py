@@ -236,3 +236,54 @@ def test_follow_up_question_gets_a_reply_and_keeps_the_pack():
 
 def types_since(session, index):
     return [e["type"] for e in session.events_since(index)]
+
+
+# --- honesty check inside the loop ----------------------------------------------------
+
+def bad_save(session_pack=None):
+    pack = {**fake_llm.PACK, "cover_note": fake_llm.PACK["cover_note"] + " I am passionate about this."}
+    return fake_llm.tool_reply("Saving.", [("save_application_pack", pack)])
+
+
+def test_rejected_pack_is_fixed_and_resaved(monkeypatch):
+    session = make_session()
+    run = good_run()
+    script(monkeypatch, run[:2] + [bad_save(), run[2]])
+    start(session)
+
+    ends = [e for e in session.events if e["type"] == "tool_end"]
+    assert [e["ok"] for e in ends] == [True, True, False, True]
+    assert ends[2]["summary"] == "Honesty check: 1 issue, asking the agent to fix it"
+    assert "passionate" in ends[2]["issues"][0]
+    assert session.status == "done" and session.pack["warnings"] == []
+
+
+def test_model_that_never_fixes_the_pack_still_ends_with_a_saved_pack(monkeypatch):
+    session = make_session()
+    script(monkeypatch, good_run()[:2] + [bad_save(), bad_save(), bad_save()])
+    start(session)
+
+    assert session.status == "done" and session.model_calls == 5
+    assert len(session.pack["warnings"]) == 1 and "passionate" in session.pack["warnings"][0]
+    assert session.events[-1]["type"] == "result"
+
+
+def test_forced_final_save_never_gets_rejected(monkeypatch):
+    session = make_session()
+    # the model loops until the loop forces score then save; its forced save is "bad"
+    def forced_bad_save(tool_choice):
+        return bad_save() if tool_choice["function"]["name"] == "save_application_pack" else obey(tool_choice)
+    script(monkeypatch, [ignore] * 10 + [obey, forced_bad_save])
+    start(session)
+
+    assert session.status == "done" and len(session.pack["warnings"]) == 1
+
+
+def test_rejection_counter_resets_each_turn(monkeypatch):
+    session = make_session()
+    script(monkeypatch, good_run()[:2] + [bad_save(), good_run()[2]])
+    start(session)
+    session.honesty_rejections = 2  # as if the last turn used its attempts
+    script(monkeypatch, [good_run()[2]])
+    agent.run_turn(session, "Please save it again.")
+    assert session.honesty_rejections == 0

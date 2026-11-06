@@ -169,3 +169,112 @@ def test_pack_strips_copied_question_numbers(session):
                {"question": "Is 3 a crowd?", "answer": "c"}]
     tools.save_application_pack(session, **{**PACK, "answers": answers})
     assert [a["question"] for a in session.pack["answers"]] == ["Why us?", "Why you?", "Is 3 a crowd?"]
+
+
+# --- honesty check ----------------------------------------------------------------
+
+import copy  # noqa: E402
+
+from app import fake_llm  # noqa: E402
+
+JOB = (Path(__file__).parent.parent / "samples" / "job_post.txt").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def scored():
+    s = Session(resume_text=RESUME, job_text=JOB)
+    tools.calculate_fit_score(s, [req("must", "strong")])
+    return s
+
+
+def good_pack():
+    return copy.deepcopy(fake_llm.PACK)
+
+
+def save(session, pack):
+    return tools.save_application_pack(session, **pack)
+
+
+def test_clean_pack_passes_the_honesty_check(scored):
+    result = save(scored, good_pack())
+    assert result["saved"] and scored.pack["warnings"] == []
+    assert scored.honesty_rejections == 0
+
+
+def test_invented_number_is_rejected(scored):
+    pack = good_pack()
+    pack["answers"][0]["answer"] += " I also cut hosting costs by 37%."
+    result = save(scored, pack)
+    assert "error" in result and scored.pack is None
+    assert any('"37"' in issue and "answer 1" in issue for issue in result["issues"])
+    assert "37%" in result["issues"][0]  # shows the offending text
+
+
+def test_numbers_from_resume_or_job_post_are_fine(scored):
+    pack = good_pack()
+    # 40 endpoints, 9s and 30% style numbers: 40 and 9 are in the resume, 25 in the job post
+    pack["answers"][0]["answer"] += " I built around 40 endpoints, cut a 9s call, and know a team of 25."
+    assert save(scored, pack)["saved"]
+
+
+def test_numbers_inside_placeholders_are_ignored(scored):
+    pack = good_pack()
+    pack["cover_note"] += " [ADD: your 2024 result of 12%]"
+    assert save(scored, pack)["saved"]
+
+
+def test_invented_number_in_a_gap_fix_is_rejected(scored):
+    pack = good_pack()
+    pack["gaps"][0]["how_to_address"] = "Spend 6 weeks on an evaluation course."
+    assert any("gap 1" in i and '"6"' in i for i in save(scored, pack)["issues"])
+
+
+def test_fake_evidence_is_rejected(scored):
+    pack = good_pack()
+    pack["strengths"][0]["evidence"] = "Led a team of ten engineers at a bank."
+    result = save(scored, pack)
+    assert "error" in result and "Strength 1" in result["issues"][0]
+
+
+def test_evidence_matching_ignores_case_whitespace_and_ellipsis(scored):
+    pack = good_pack()
+    pack["strengths"][0]["evidence"] = '- "build and   MAINTAIN internal rest apis ... used by the dispatch team"'
+    assert save(scored, pack)["saved"]
+
+
+def test_feeling_phrase_is_rejected(scored):
+    pack = good_pack()
+    pack["cover_note"] = "I am excited about Corvane Pay and passionate about agents."
+    issues = save(scored, pack)["issues"]
+    assert any('"excited"' in i for i in issues) and any('"passionate"' in i for i in issues)
+
+
+def test_feeling_inside_placeholder_is_fine_and_resume_stated_feelings_too(scored):
+    pack = good_pack()
+    pack["cover_note"] += " [ADD: why you are excited about this team]"
+    assert save(scored, pack)["saved"]
+
+    scored.pack = None
+    scored.resume_text += "\nI am passionate about teaching junior developers."
+    pack["answers"][0]["answer"] += " I am passionate about teaching."
+    assert save(scored, pack)["saved"]
+
+
+def test_after_two_rejections_it_saves_with_warnings(scored):
+    bad = good_pack()
+    bad["answers"][0]["answer"] += " I raised revenue by 37%."
+    assert "error" in save(scored, bad) and "error" in save(scored, bad)
+    assert scored.honesty_rejections == 2 and scored.pack is None
+
+    result = save(scored, bad)  # third attempt: saved anyway
+    assert result["saved"] and result["warnings"] == 1
+    assert len(scored.pack["warnings"]) == 1 and "37" in scored.pack["warnings"][0]
+    assert tools.summary_for("save_application_pack", result) == "Application pack saved with 1 warning(s)"
+
+
+def test_rejection_summary_text(scored):
+    pack = good_pack()
+    pack["cover_note"] = "I love it, I am excited, and I am passionate, with 77 years of experience."
+    result = save(scored, pack)
+    assert tools.summary_for("save_application_pack", result) == (
+        f"Honesty check: {len(result['issues'])} issues, asking the agent to fix them")
