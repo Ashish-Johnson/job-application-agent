@@ -6,8 +6,6 @@ A local, privacy-first agent that reads a job post and your CV, scores your fit 
 
 *Screenshot of the results view, taken in demo mode (a scripted fake model on the fictional files in `samples/`).*
 
-**Demo video:** [add link here](https://example.com/REPLACE-WITH-DEMO-VIDEO-LINK)
-
 ## What you get
 
 Paste a job post (text or URL), your resume (text or PDF/TXT/MD upload) and optional application questions, one per line. Watching the agent work step by step, you get an application pack:
@@ -115,6 +113,7 @@ Limits today:
 - Scanned PDFs have no text to extract; paste the text instead. Job pages that need JavaScript can't be read; paste the post.
 - Resume and job post are capped at 30,000 characters each, uploads at 5 MB, questions at 10.
 - Stop abandons a model request that is already in flight; the provider may still finish and bill it.
+- The URL check in `fetch_webpage` resolves the host, then connects, so a hostile DNS server could answer differently the second time (DNS rebinding). This only matters for a malicious job URL pasted on your own machine.
 - One user on one machine, by design.
 
 Next:
