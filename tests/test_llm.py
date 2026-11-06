@@ -48,3 +48,39 @@ def test_retries_rate_limit_then_succeeds(monkeypatch):
     waits = []
     assert llm.chat("s", [], on_wait=waits.append) == "ok"
     assert len(calls) == 3 and len(waits) == 2
+
+
+def _patch_completion(monkeypatch, error_factory):
+    monkeypatch.setenv("LLM_MODEL", "ollama/x")
+    monkeypatch.delenv("FAKE_LLM", raising=False)
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    calls = []
+
+    def always_fails(**kwargs):
+        calls.append(1)
+        raise error_factory()
+
+    monkeypatch.setattr(llm.litellm, "completion", always_fails)
+    return calls
+
+
+def test_timeout_is_retried_only_once(monkeypatch):
+    calls = _patch_completion(monkeypatch, lambda: llm.litellm.Timeout("slow", "x", "ollama"))
+    with pytest.raises(llm.litellm.Timeout):
+        llm.chat("s", [])
+    assert len(calls) == 2  # first try + 1 retry
+
+
+def test_connection_error_is_retried_only_once(monkeypatch):
+    calls = _patch_completion(
+        monkeypatch, lambda: llm.litellm.APIConnectionError("down", "ollama", "x"))
+    with pytest.raises(llm.litellm.APIConnectionError):
+        llm.chat("s", [])
+    assert len(calls) == 2  # not 5, even though litellm reports status 500
+
+
+def test_other_errors_are_not_retried(monkeypatch):
+    calls = _patch_completion(monkeypatch, lambda: ValueError("bad request"))
+    with pytest.raises(ValueError):
+        llm.chat("s", [])
+    assert len(calls) == 1

@@ -12,9 +12,11 @@ from litellm.types.utils import ChatCompletionMessageToolCall, Function
 load_dotenv()
 
 DEFAULT_MODEL = "gemini/gemini-3.5-flash"
-MAX_RETRIES = 4
+MAX_RETRIES = 4  # rate limits and 5xx
+MAX_RETRIES_SLOW = 1  # timeouts and connection errors
 FIRST_WAIT = 5  # seconds; doubles on each retry
-REQUEST_TIMEOUT = 60  # seconds per model call
+# Writing the full application pack on a thinking model can take over a minute
+REQUEST_TIMEOUT = 120  # seconds per model call
 
 # Provider prefix of LLM_MODEL -> env var that must hold its key.
 # Ollama runs locally and needs none.
@@ -68,37 +70,49 @@ def _retry_delay(err: Exception, attempt: int) -> float:
     return FIRST_WAIT * 2**attempt
 
 
-def _is_retryable(err: Exception) -> bool:
+def _max_retries(err: Exception) -> int:
+    """How many retries this error deserves (0 = fail immediately)."""
+    # Checked first: litellm gives APIConnectionError a 500 status code, but a
+    # dead connection or a very slow call is unlikely to fix itself quickly,
+    # and each attempt can cost up to REQUEST_TIMEOUT seconds.
+    if isinstance(err, (litellm.Timeout, litellm.APIConnectionError)):
+        return MAX_RETRIES_SLOW
     status = getattr(err, "status_code", None)
-    return isinstance(err, litellm.RateLimitError) or status == 429 or (
+    if isinstance(err, litellm.RateLimitError) or status == 429 or (
         isinstance(status, int) and status >= 500
-    )
+    ):
+        return MAX_RETRIES
+    return 0
 
 
 def chat(system: str, history: list, tools: list | None = None, on_wait=None) -> ModelResponse:
     """One model call: system prompt + history + tool schemas -> response.
 
-    Retries rate limits (429) and 5xx errors, calling on_wait(message) before
-    each sleep so the UI can show it.
+    Retries rate limits (429) and 5xx errors up to 4 times, timeouts and
+    connection errors once, calling on_wait(message) before each sleep so the
+    UI can show it.
     """
     model = check_config()
     if fake_enabled():
         return _fake_chat(history, tools)
 
     messages = [{"role": "system", "content": system}] + history
-    for attempt in range(MAX_RETRIES + 1):
+    attempt = 0
+    while True:
         try:
             # tools are passed through; we run the tool loop ourselves
             # timeout so a hung request fails (and retries) instead of freezing the UI
             return litellm.completion(model=model, messages=messages,
                                       tools=tools or None, timeout=REQUEST_TIMEOUT)
         except Exception as err:
-            if not _is_retryable(err) or attempt == MAX_RETRIES:
+            limit = _max_retries(err)
+            if attempt >= limit:
                 raise
             delay = _retry_delay(err, attempt)
+            attempt += 1
             if on_wait:
                 on_wait(f"Rate limited or provider busy, retrying in {delay:.0f}s "
-                        f"(attempt {attempt + 1} of {MAX_RETRIES})")
+                        f"(retry {attempt} of {limit})")
             time.sleep(delay)
 
 
