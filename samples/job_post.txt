@@ -1,0 +1,32 @@
+AI Builder (Agents)
+Corvane Pay (fictional fintech) - Remote (EU/UK time zones) - Full-time
+
+About Corvane Pay
+Corvane Pay is a small, fast-growing company that helps online merchants get paid faster and reconcile their payouts with less manual work. We are a team of 25 and we ship weekly.
+
+The role
+We are hiring an AI Builder to design and ship AI agents that take over repetitive operations work: matching payouts to invoices, drafting replies to merchant support tickets, and flagging unusual transactions for human review. You will work directly with the operations team, own projects end to end, and put working software in front of real users within days, not quarters.
+
+What you will do
+- Build LLM-powered agents that call internal tools and APIs to complete multi-step tasks.
+- Write evaluations and guardrails so agents are accurate, auditable, and safe to use with financial data.
+- Talk to operations colleagues, find the manual work worth automating, and turn it into a tool.
+- Monitor agents in production and improve them from real failures.
+
+Must have
+- 1+ years of professional software development experience.
+- Strong Python, including building HTTP APIs (FastAPI, Flask or similar).
+- Hands-on experience building with LLM APIs, including tool/function calling.
+- Comfortable writing automated tests.
+- Clear written communication in English.
+
+Nice to have
+- Experience building agent loops or multi-step LLM workflows.
+- Experience with evaluation of LLM outputs (test sets, scoring, regression checks).
+- Background in fintech, payments, or financial operations.
+- Experience with PostgreSQL and SQL.
+- Experience with Docker and CI/CD.
+- Experience with observability / tracing for LLM applications.
+
+How we work
+Small teams, no spec handed over the wall. You are expected to find the problem, propose a solution, and ship it.

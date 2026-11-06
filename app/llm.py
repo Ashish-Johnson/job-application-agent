@@ -1,1 +1,141 @@
 """LiteLLM wrapper - the only file that knows about providers."""
+import json
+import os
+import re
+import time
+
+import litellm
+from dotenv import load_dotenv
+from litellm import Message, ModelResponse
+from litellm.types.utils import ChatCompletionMessageToolCall, Function
+
+load_dotenv()
+
+DEFAULT_MODEL = "gemini/gemini-3.5-flash"
+MAX_RETRIES = 4
+FIRST_WAIT = 5  # seconds; doubles on each retry
+REQUEST_TIMEOUT = 60  # seconds per model call
+
+# Provider prefix of LLM_MODEL -> env var that must hold its key.
+# Ollama runs locally and needs none.
+KEY_VARS = {
+    "gemini": "GEMINI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+
+class LLMConfigError(Exception):
+    """Bad or missing configuration; the message says what to fix."""
+
+
+def get_model() -> str:
+    return os.getenv("LLM_MODEL") or DEFAULT_MODEL
+
+
+def fake_enabled() -> bool:
+    return os.getenv("FAKE_LLM") == "1"
+
+
+def check_config() -> str:
+    """Return the model name, or raise LLMConfigError if its key is missing."""
+    model = get_model()
+    if fake_enabled():
+        return "fake"
+    key_var = KEY_VARS.get(model.split("/")[0])
+    if key_var and not os.getenv(key_var):
+        raise LLMConfigError(
+            f"LLM_MODEL is '{model}' but {key_var} is not set. "
+            f"Add {key_var}=... to your .env file (see .env.example)."
+        )
+    return model
+
+
+def _retry_delay(err: Exception, attempt: int) -> float:
+    """Provider's retry-after if it gave one, else exponential backoff."""
+    headers = getattr(getattr(err, "response", None), "headers", None) or {}
+    if headers.get("retry-after"):
+        try:
+            return float(headers["retry-after"])
+        except ValueError:
+            pass
+    # Gemini puts the delay in the message body, e.g. "Please retry in 12.5s"
+    match = re.search(r"retry in ([\d.]+)s", str(err), re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return FIRST_WAIT * 2**attempt
+
+
+def _is_retryable(err: Exception) -> bool:
+    status = getattr(err, "status_code", None)
+    return isinstance(err, litellm.RateLimitError) or status == 429 or (
+        isinstance(status, int) and status >= 500
+    )
+
+
+def chat(system: str, history: list, tools: list | None = None, on_wait=None) -> ModelResponse:
+    """One model call: system prompt + history + tool schemas -> response.
+
+    Retries rate limits (429) and 5xx errors, calling on_wait(message) before
+    each sleep so the UI can show it.
+    """
+    model = check_config()
+    if fake_enabled():
+        return _fake_chat(history, tools)
+
+    messages = [{"role": "system", "content": system}] + history
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            # tools are passed through; we run the tool loop ourselves
+            # timeout so a hung request fails (and retries) instead of freezing the UI
+            return litellm.completion(model=model, messages=messages,
+                                      tools=tools or None, timeout=REQUEST_TIMEOUT)
+        except Exception as err:
+            if not _is_retryable(err) or attempt == MAX_RETRIES:
+                raise
+            delay = _retry_delay(err, attempt)
+            if on_wait:
+                on_wait(f"Rate limited or provider busy, retrying in {delay:.0f}s "
+                        f"(attempt {attempt + 1} of {MAX_RETRIES})")
+            time.sleep(delay)
+
+
+def append_reply(history: list, response: ModelResponse) -> Message:
+    """Append the model's message to history exactly as returned.
+
+    Do not rebuild it from dict fields: provider_specific_fields (Gemini's
+    thought signatures) must be sent back untouched or later calls can fail.
+    """
+    message = response.choices[0].message
+    history.append(message)
+    return message
+
+
+# --- FAKE_LLM=1: no network, no quota --------------------------------------
+
+def _fake_chat(history: list, tools: list | None) -> ModelResponse:
+    """Call each offered tool once with empty args, then give a final answer.
+
+    The step is chosen by how many assistant replies are already in history.
+    """
+    names = [t["function"]["name"] for t in tools or []]
+    step = sum(1 for m in history if _role(m) == "assistant")
+    if step < len(names):
+        call = ChatCompletionMessageToolCall(
+            id=f"fake_{step}", type="function",
+            function=Function(name=names[step], arguments=json.dumps({})),
+        )
+        message = Message(role="assistant", content=None, tool_calls=[call])
+        finish = "tool_calls"
+    else:
+        message = Message(role="assistant", content="FAKE: done.")
+        finish = "stop"
+    return ModelResponse(
+        model="fake", choices=[{"index": 0, "message": message, "finish_reason": finish}]
+    )
+
+
+def _role(message) -> str:
+    return message["role"] if isinstance(message, dict) else message.role

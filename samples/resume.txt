@@ -1,0 +1,30 @@
+MAYA OKAFOR-LINDQVIST
+Junior Software Developer
+maya.example@example.com | Brightwater, Example State | github.com/example-maya
+
+SUMMARY
+Developer with about 2 years of professional experience building web back ends in Python and TypeScript. Recently built small tools on top of LLM APIs and enjoy turning messy, manual workflows into reliable software.
+
+EXPERIENCE
+
+Software Developer - Tallowfield Logistics (fictional), Mar 2023 - present
+- Build and maintain internal REST APIs in Python (FastAPI) used by the dispatch team; around 40 endpoints backed by PostgreSQL.
+- Wrote a Python service that parses customer delivery emails with an LLM API (OpenAI) and turns them into structured booking records; cut manual data entry for the dispatch team by roughly half.
+- Added pytest coverage for the booking service and set up a GitHub Actions pipeline that runs tests on every pull request.
+- Reduced a slow reporting endpoint from about 9s to under 2s by adding indexes and removing N+1 queries.
+
+Junior Developer (Intern, then full-time) - Quillmark Digital Agency (fictional), Jun 2022 - Feb 2023
+- Built client websites and small admin dashboards in TypeScript and React.
+- Wrote REST integrations with third-party payment and shipping APIs.
+- Fixed bugs from the support queue and wrote short handover notes for the team.
+
+PROJECTS
+- Recipe Pantry Helper (personal): a small web app where you list ingredients and an LLM (Gemini API) suggests recipes. Uses function calling to look up pantry items from a JSON file. Deployed for friends and family; about 30 regular users.
+- Study Buddy CLI (personal): a command-line flashcard tool in Python that generates quiz questions from pasted notes.
+
+SKILLS
+Python, FastAPI, PostgreSQL, SQL, TypeScript, React (basic), Git, GitHub Actions, pytest, Docker (basic), REST APIs.
+LLM APIs: OpenAI and Gemini chat/function calling, prompt iteration, JSON output parsing.
+
+EDUCATION
+BSc Computer Science, University of Northfield (fictional), 2022

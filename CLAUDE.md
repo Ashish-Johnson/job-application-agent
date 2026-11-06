@@ -4,7 +4,7 @@
 The user pastes (1) a job post as text or URL, (2) their resume as text or PDF, (3) optional application questions, one per line. An AI agent works step by step, visibly, and produces an "application pack": a 0-100 fit score with breakdown, strengths backed by resume evidence, gaps with how to address each, a drafted answer to every question, and a short cover note. The user can then chat to request changes ("make answer 2 shorter").
 
 ## Hard constraints
-- **Bring your own model:** all model calls go through LiteLLM (no provider SDKs). The user picks the model with `LLM_MODEL` in `.env` plus that provider's key. Supported: Gemini, OpenAI, Anthropic, Groq, OpenRouter, local Ollama (no key). Default is `gemini/gemini-2.5-flash` (free tier).
+- **Bring your own model:** all model calls go through LiteLLM (no provider SDKs). The user picks the model with `LLM_MODEL` in `.env` plus that provider's key. Supported: Gemini, OpenAI, Anthropic, Groq, OpenRouter, local Ollama (no key). Default is `gemini/gemini-3.5-flash` (free tier).
 - **Hand-written agent loop:** manual tool calling so every step is visible and explainable in an interview. No agent frameworks.
 - **Privacy-first, local only:** server bound to 127.0.0.1:8000, UI in the browser. No hosting, database, accounts, analytics, or storage outside the machine. The only data that leaves it is what is sent to the user's chosen model provider; nothing at all with Ollama.
 - Python 3.11+, FastAPI + Uvicorn, ONE static HTML page with vanilla JS and CSS (no React, no build step).
