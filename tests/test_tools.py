@@ -94,7 +94,7 @@ def test_score_rejects_bad_entries(session):
 
 # --- save_application_pack ----------------------------------------------------
 
-PACK = dict(role="r", company="c", summary="s", strengths=[], gaps=[], answers=[], cover_note="n")
+PACK = dict(role="r", company="c", summary="s", strengths=[], gaps=[], answers=[], cover_letter="n")
 
 
 def test_pack_requires_a_score_first(session):
@@ -219,7 +219,7 @@ def test_numbers_from_resume_or_job_post_are_fine(scored):
 
 def test_numbers_inside_placeholders_are_ignored(scored):
     pack = good_pack()
-    pack["cover_note"] += " [ADD: your 2024 result of 12%]"
+    pack["cover_letter"] += " [ADD: your 2024 result of 12%]"
     assert save(scored, pack)["saved"]
 
 
@@ -254,14 +254,14 @@ def test_evidence_matching_ignores_case_whitespace_and_ellipsis(scored):
 
 def test_feeling_phrase_is_rejected(scored):
     pack = good_pack()
-    pack["cover_note"] = "I am excited about Corvane Pay and passionate about agents."
+    pack["cover_letter"] = "I am excited about Corvane Pay and passionate about agents."
     issues = save(scored, pack)["issues"]
     assert any('"excited"' in i for i in issues) and any('"passionate"' in i for i in issues)
 
 
 def test_feeling_inside_placeholder_is_fine_and_resume_stated_feelings_too(scored):
     pack = good_pack()
-    pack["cover_note"] += " [ADD: why you are excited about this team]"
+    pack["cover_letter"] += " [ADD: why you are excited about this team]"
     assert save(scored, pack)["saved"]
 
     scored.pack = None
@@ -284,7 +284,48 @@ def test_after_two_rejections_it_saves_with_warnings(scored):
 
 def test_rejection_summary_text(scored):
     pack = good_pack()
-    pack["cover_note"] = "I love it, I am excited, and I am passionate, with 77 years of experience."
+    pack["cover_letter"] = "I love it, I am excited, and I am passionate, with 77 years of experience."
     result = save(scored, pack)
     assert tools.summary_for("save_application_pack", result) == (
         f"Honesty check: {len(result['issues'])} issues, asking the agent to fix them")
+
+
+# --- the score is frozen, schemas follow ---------------------------------------------------------------
+
+def test_calculate_fit_score_refuses_once_a_pack_exists(scored):
+    save(scored, good_pack())
+    fit_before = scored.fit
+    result = tools.calculate_fit_score(scored, [req("must", "missing")])
+    assert "error" in result and "fixed" in result["error"]
+    assert scored.fit is fit_before and scored.pack["score"] == fit_before["score"]
+
+
+def test_schemas_drop_calculate_fit_score_after_the_pack(scored):
+    names = lambda s: [t["function"]["name"] for t in tools.schemas_for(s)]  # noqa: E731
+    assert "calculate_fit_score" in names(scored)
+    save(scored, good_pack())
+    assert "calculate_fit_score" not in names(scored) and "save_application_pack" in names(scored)
+
+
+# --- candidate facts count as true sources --------------------------------------------------------------
+
+def test_number_only_in_candidate_facts_is_accepted(scored):
+    pack = good_pack()
+    pack["answers"][0]["answer"] += " I raised throughput to 450 requests per second."
+    assert "450" in save(scored, pack)["issues"][0]  # rejected: not in resume or job post
+
+    scored.candidate_facts = [{"hint": "your result", "value": "We reached 450 requests per second."}]
+    assert save(scored, pack)["saved"] and scored.pack["warnings"] == []
+
+
+def test_feeling_is_accepted_via_a_fact_value_but_never_via_a_hint(scored):
+    pack = good_pack()
+    pack["cover_letter"] += " I am excited about payments."
+
+    scored.candidate_facts = [{"hint": "why you are excited", "value": "Payments interest me."}]
+    issues = save(scored, pack)["issues"]
+    assert any('"excited"' in i and "cover letter" in i for i in issues)  # the hint does not count
+
+    scored.honesty_rejections = 0
+    scored.candidate_facts = [{"hint": "motivation", "value": "I am excited about payments."}]
+    assert save(scored, pack)["saved"]

@@ -150,6 +150,11 @@ def check_resume_for(session, skills: list[str]) -> dict:
 # --- 4. calculate_fit_score --------------------------------------------------
 
 def calculate_fit_score(session, requirements: list[dict]) -> dict:
+    if session.pack is not None:
+        # The score measures the resume as written against the job. Details the candidate adds
+        # later are not in the resume, so they must never change it.
+        return {"error": "The fit score is fixed for this resume and job post. Do not "
+                         "recalculate it; keep working on the text."}
     if not isinstance(requirements, list) or not requirements:
         return {"error": "requirements must be a non-empty list."}
     breakdown, earned, possible = [], 0.0, 0
@@ -206,7 +211,11 @@ def honesty_issues(session, fields: dict) -> list[str]:
     """Deterministic checks on a pack before it is saved. Returns specific, fixable issues."""
     issues = []
     resume = _norm(session.resume_text)
-    allowed_numbers = _numbers(session.resume_text) | _numbers(session.job_text)
+    # What the candidate typed in ("Regenerate with my details") counts as a true source, but only
+    # the values: a hint like "why you are excited" must not make the word "excited" acceptable.
+    facts = " ".join(fact["value"] for fact in session.candidate_facts)
+    facts_norm = _norm(facts)
+    allowed_numbers = _numbers(session.resume_text) | _numbers(session.job_text) | _numbers(facts)
 
     # 1. Every strength's evidence must be a real quote from the resume
     for i, item in enumerate(fields["strengths"], 1):
@@ -221,7 +230,7 @@ def honesty_issues(session, fields: dict) -> list[str]:
     # 2 and 3. Numbers and feelings in everything the candidate would say or send.
     # (label, text, check_numbers): how_to_address is advice ("practise for 4 weeks"), not a
     # claim about the candidate, so only its feelings are checked.
-    texts = [("summary", fields["summary"], True), ("cover note", fields["cover_note"], True)]
+    texts = [("summary", fields["summary"], True), ("cover letter", fields["cover_letter"], True)]
     for i, item in enumerate(fields["strengths"], 1):
         texts.append((f"strength {i}", item.get("strength", "") if isinstance(item, dict) else "", True))
     for i, item in enumerate(fields["gaps"], 1):
@@ -238,11 +247,11 @@ def honesty_issues(session, fields: dict) -> list[str]:
             number = match.group().replace(",", "")
             if number not in allowed_numbers and number not in reported:
                 reported.add(number)
-                issues.append(f'{label}: the number "{number}" is not in the resume or job post '
+                issues.append(f'{label}: the number "{number}" is not in the resume, job post or provided details '
                               f'(in "...{_around(text, match)}..."). Remove it or use an [ADD: ...] placeholder.')
         for phrase in FEELING_PHRASES:
             match = re.search(r"\b" + re.escape(phrase), text, re.IGNORECASE)
-            if match and _norm(phrase) not in resume:
+            if match and _norm(phrase) not in resume and _norm(phrase) not in facts_norm:
                 issues.append(f'{label}: "{phrase}" states a feeling or motivation the resume does not '
                               f'support (in "...{_around(text, match)}..."). Only the candidate can supply '
                               "that: replace it with an [ADD: ...] placeholder.")
@@ -250,11 +259,11 @@ def honesty_issues(session, fields: dict) -> list[str]:
 
 
 def save_application_pack(session, role: str, company: str, summary: str, strengths: list,
-                          gaps: list, answers: list, cover_note: str) -> dict:
+                          gaps: list, answers: list, cover_letter: str) -> dict:
     if session.fit is None:
         return {"error": "No fit score yet. Call calculate_fit_score first, then save the pack."}
     answers = _strip_question_numbers(answers)
-    fields = {"summary": summary, "cover_note": cover_note,
+    fields = {"summary": summary, "cover_letter": cover_letter,
               "strengths": strengths, "gaps": gaps, "answers": answers}
 
     issues = honesty_issues(session, fields)
@@ -266,7 +275,7 @@ def save_application_pack(session, role: str, company: str, summary: str, streng
 
     session.pack = {
         "role": role, "company": company, "summary": summary,
-        "strengths": strengths, "gaps": gaps, "answers": answers, "cover_note": cover_note,
+        "strengths": strengths, "gaps": gaps, "answers": answers, "cover_letter": cover_letter,
         # Always taken from the calculator, never from the model, so the score can't be invented.
         "score": session.fit["score"],
         "verdict": session.fit["verdict"],
@@ -370,7 +379,7 @@ SCHEMAS = [
         "lookup_company",
         "Look up a company on Wikipedia and return its title, short description and summary. "
         "Use it once to understand what the employer does, for the 'why this company' answer "
-        "and the cover note. Small companies often have no page: if found is false, continue "
+        "and the cover letter. Small companies often have no page: if found is false, continue "
         "using only what the job post says. Check the description matches the company in the "
         "job post, since search can return a different organisation with a similar name. "
         "Never state facts about the company that this tool or the job post did not provide.",
@@ -404,12 +413,13 @@ SCHEMAS = [
         "Save the finished application pack. Call it last, only after calculate_fit_score. "
         "Every claim about the candidate must come from the resume; where a fact is missing "
         "write a placeholder like [ADD: metric for this achievement] instead of inventing it. "
-        "Include a drafted answer for every application question and a short cover note. "
+        "Include a drafted answer for every application question and a full cover letter. "
         "Do not include a score: it is attached automatically. An automatic honesty check runs "
         "first and rejects the save, returning a list of issues, if a strength's evidence is not an "
-        "exact quote from the resume, if any number is not in the resume or job post (including in "
-        "gap fixes: describe without numbers or use [ADD: ...]), or if a feeling or motivation "
-        "('I enjoy', 'excited', 'passionate'...) is written outside an [ADD: ...] placeholder. "
+        "exact quote from the resume, if any number in the summary, strengths, gaps, answers or "
+        "cover letter is not in the resume, job post or the candidate's provided details (advice in "
+        "how_to_address may use numbers), or if a feeling or motivation ('I enjoy', 'excited', "
+        "'passionate'...) is written outside an [ADD: ...] placeholder. "
         "If issues come back, fix exactly those and call this tool again with the full pack.",
         {"role": {"type": "string"},
          "company": {"type": "string"},
@@ -426,6 +436,17 @@ SCHEMAS = [
              "question": {"type": "string"},
              "answer": {"type": "string"}},
              "required": ["question", "answer"]}},
-         "cover_note": {"type": "string", "description": "Short cover note, under 150 words."}},
-        ["role", "company", "summary", "strengths", "gaps", "answers", "cover_note"]),
+         "cover_letter": {"type": "string", "description": (
+             "Full cover letter, 250-350 words, 3-4 short paragraphs. Start with 'Dear Hiring Team,' "
+             "unless the job post names a person; sign with the candidate's name from the resume. "
+             "Built only from the resume and job post; anything unknown is an [ADD: ...] placeholder.")}},
+        ["role", "company", "summary", "strengths", "gaps", "answers", "cover_letter"]),
 ]
+
+
+def schemas_for(session) -> list:
+    """The tools the model may use now. The score is frozen once a pack exists, so the model
+    is not even offered calculate_fit_score in follow-up turns."""
+    if session.pack is None:
+        return SCHEMAS
+    return [s for s in SCHEMAS if s["function"]["name"] != "calculate_fit_score"]

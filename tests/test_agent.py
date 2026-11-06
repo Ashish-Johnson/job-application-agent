@@ -82,7 +82,8 @@ def test_happy_path():
     assert pack["score"] == session.fit["score"] and pack["verdict"] == session.fit["verdict"]
     assert [a["question"] for a in pack["answers"]] == QUESTIONS
     assert all(60 <= len(a["answer"].split()) <= 120 for a in pack["answers"])
-    assert len(pack["cover_note"].split()) < 120
+    assert 250 <= len(pack["cover_letter"].split()) <= 350 and pack["cover_letter"].startswith("Dear Hiring Team,")
+    assert "[ADD:" in pack["cover_letter"]
     assert "[ADD:" in str(pack)  # missing facts are placeholders, not inventions
     # honesty: every strength's evidence is real resume text
     assert all(s["evidence"] in RESUME for s in pack["strengths"])
@@ -241,7 +242,7 @@ def types_since(session, index):
 # --- honesty check inside the loop ----------------------------------------------------
 
 def bad_save(session_pack=None):
-    pack = {**fake_llm.PACK, "cover_note": fake_llm.PACK["cover_note"] + " I am passionate about this."}
+    pack = {**fake_llm.PACK, "cover_letter": fake_llm.PACK["cover_letter"] + " I am passionate about this."}
     return fake_llm.tool_reply("Saving.", [("save_application_pack", pack)])
 
 
@@ -287,3 +288,143 @@ def test_rejection_counter_resets_each_turn(monkeypatch):
     script(monkeypatch, [good_run()[2]])
     agent.run_turn(session, "Please save it again.")
     assert session.honesty_rejections == 0
+
+
+# --- Stop -----------------------------------------------------------------------------------
+
+import threading  # noqa: E402
+import time  # noqa: E402
+
+
+def blocking_model(monkeypatch, response):
+    """A model call that hangs until released, like a slow provider request."""
+    entered, release = threading.Event(), threading.Event()
+
+    def fake_chat(system, history, tools=None, on_wait=None, tool_choice=None):
+        entered.set()
+        release.wait(timeout=10)
+        return response
+
+    monkeypatch.setattr(agent.llm, "chat", fake_chat)
+    return entered, release
+
+
+def test_stop_before_the_first_model_call(monkeypatch):
+    session = make_session()
+    script(monkeypatch, [])  # any model call would fail the test
+    session.stop_requested = True
+    start(session)
+
+    assert session.status == "stopped" and session.model_calls == 0
+    assert types(session) == ["stopped"] and session.events[0]["message"] == "Stopped by you"
+    assert session.history[-1] == {"role": "assistant", "content": "(Stopped by the user.)"}
+    assert session.stop_requested is False  # cleared with the status
+
+
+def test_stop_during_a_model_call_returns_at_once_and_discards_the_late_reply(monkeypatch):
+    session = make_session()
+    late = fake_llm.tool_reply("Late.", [("check_resume_for", {"skills": ["Python"]})])
+    entered, release = blocking_model(monkeypatch, late)
+    worker = threading.Thread(target=start, args=(session,))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        assert session.request_stop() is True
+        worker.join(3)
+        assert not worker.is_alive()  # the turn ended although the model call is still hanging
+        assert session.status == "stopped" and types(session) == ["stopped"]
+        history_before, events_before = list(session.history), list(session.events)
+    finally:
+        release.set()  # the provider finally answers
+    time.sleep(0.4)
+    assert session.history == history_before and session.events == events_before  # reply discarded
+    assert session.model_calls == 0 and session.pack is None
+
+
+def test_stop_between_tool_calls_cancels_the_rest(monkeypatch):
+    session = make_session()
+    two_calls = fake_llm.tool_reply("Checking twice.", [("check_resume_for", {"skills": ["Python"]}),
+                                                         ("check_resume_for", {"skills": ["SQL"]})])
+    script(monkeypatch, [two_calls])
+    real_run_tool = agent.tools.run_tool
+
+    def run_then_stop(sess, name, args):
+        result = real_run_tool(sess, name, args)
+        sess.request_stop()  # the user presses Stop while the first tool runs
+        return result
+
+    monkeypatch.setattr(agent.tools, "run_tool", run_then_stop)
+    start(session)
+
+    assert session.status == "stopped" and types(session).count("tool_end") == 1
+    tool_messages = [m for m in session.history if isinstance(m, dict) and m["role"] == "tool"]
+    assert len(tool_messages) == 2 and "Cancelled by the user" in tool_messages[1]["content"]
+
+
+def test_stopped_turn_keeps_the_pack_and_followups_still_work():
+    session = make_session()
+    start(session)
+    pack = session.pack
+
+    session.stop_requested = True
+    agent.run_turn(session, "Please make answer 1 shorter.")
+    assert session.status == "stopped" and session.pack is pack  # nothing lost
+
+    agent.run_turn(session, "What is my biggest gap?")  # the Stop did not leak into this turn
+    assert session.status == "done" and session.events[-1]["type"] == "reply"
+
+
+def test_request_stop_only_works_while_running():
+    session = agent.Session()
+    assert session.request_stop() is False and session.stop_requested is False
+    session.status = "running"
+    assert session.request_stop() is True and session.stop_requested is True
+
+
+# --- the score is frozen once a pack exists ------------------------------------------------------------
+
+SCORE_FIELDS = ("score", "verdict", "missing_must_haves", "breakdown")
+
+
+def test_regenerate_keeps_score_verdict_and_breakdown():
+    session = make_session()
+    start(session)
+    before = {key: session.pack[key] for key in SCORE_FIELDS}
+
+    facts = [{"hint": "your availability or start date, and how to reach you.", "value": "I can start in March."}]
+    agent.run_turn(session, agent.build_facts_message(facts))
+
+    assert session.status == "done" and "I can start in March." in session.pack["cover_letter"]
+    assert {key: session.pack[key] for key in SCORE_FIELDS} == before
+
+
+def test_model_cannot_rescore_in_a_follow_up_turn(monkeypatch):
+    session = make_session()
+    offered = []
+
+    def run(replies):
+        replies = iter(replies)
+
+        def fake_chat(system, history, tools=None, on_wait=None, tool_choice=None):
+            offered.append([t["function"]["name"] for t in tools])
+            return next(replies)
+
+        monkeypatch.setattr(agent.llm, "chat", fake_chat)
+
+    run(good_run())
+    start(session)
+    assert "calculate_fit_score" in offered[0]  # the first run may score
+    fit_before, pack_before = session.fit, {key: session.pack[key] for key in SCORE_FIELDS}
+
+    # In a follow-up the model tries to re-score anyway (everything "missing"), then saves
+    worse = [dict(r, match="missing") for r in fake_llm.REQUIREMENTS]
+    offered.clear()
+    run([fake_llm.tool_reply("Re-scoring.", [("calculate_fit_score", {"requirements": worse})]),
+         fake_llm.tool_reply("Saving.", [("save_application_pack", fake_llm.PACK)])])
+    agent.run_turn(session, agent.build_facts_message([{"hint": "h", "value": "v"}]))
+
+    assert all("calculate_fit_score" not in names for names in offered)  # not even offered
+    ends = [e for e in session.events_since(0) if e["type"] == "tool_end"]
+    assert ends[-2]["ok"] is False and "fixed" in ends[-2]["summary"]  # and refused if called
+    assert session.fit is fit_before
+    assert {key: session.pack[key] for key in SCORE_FIELDS} == pack_before

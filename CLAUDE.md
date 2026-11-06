@@ -1,7 +1,7 @@
 # Job Application Agent
 
 ## Product
-The user pastes (1) a job post as text or URL, (2) their resume as text or PDF, (3) optional application questions, one per line. An AI agent works step by step, visibly, and produces an "application pack": a 0-100 fit score with breakdown, strengths backed by resume evidence, gaps with how to address each, a drafted answer to every question, and a short cover note. The user can then chat to request changes ("make answer 2 shorter").
+The user pastes (1) a job post as text or URL, (2) their resume as text or PDF, (3) optional application questions, one per line. An AI agent works step by step, visibly, and produces an "application pack": a 0-100 fit score with breakdown, strengths backed by resume evidence, gaps with how to address each, a drafted answer to every question, and a full cover letter (250-350 words). Anything the agent can't know is an `[ADD: ...]` placeholder that the user fills in inline and can feed back with "Regenerate with my details". The score is fixed once the pack is saved. The user can chat to request changes ("make answer 2 shorter") and can Stop a run at any time.
 
 ## Hard constraints
 - **Bring your own model:** all model calls go through LiteLLM (no provider SDKs). The user picks the model with `LLM_MODEL` in `.env` plus that provider's key. Supported: Gemini, OpenAI, Anthropic, Groq, OpenRouter, local Ollama (no key). Default is `gemini/gemini-3.5-flash` (free tier).

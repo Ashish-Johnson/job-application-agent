@@ -245,9 +245,29 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
 .chat-form .btn { min-height: 44px; }
 #err-chat { margin-top: 8px; }
 
+/* Fill-in-the-blanks: a one-row textarea that grows with its content (the hidden ::after copy sizes it) */
+.blank { display: inline-grid; max-width: 100%; min-width: 9ch; vertical-align: baseline; }
+.blank::after { content: attr(data-value) " "; grid-area: 1 / 1; visibility: hidden; white-space: pre-wrap; overflow-wrap: anywhere; padding: 1px 9px; font-weight: 500; }
+.blank textarea { grid-area: 1 / 1; display: block; width: 100%; height: 100%; min-height: 0; margin: 0; resize: none; overflow: hidden; padding: 0 7px; border: 1px solid var(--amber-border); border-radius: 6px; background: var(--amber-bg); color: var(--amber-text); font: inherit; font-weight: 500; line-height: inherit; }
+.blank textarea::placeholder { color: var(--amber-text); opacity: 0.8; font-style: italic; font-weight: 400; }
+.blank textarea:focus-visible { outline-offset: 1px; border-color: var(--accent); }
+.blank.filled textarea { background: var(--green-bg); border-color: var(--green-text); color: var(--green-text); }
+.fill-bar { position: sticky; top: 8px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 2px 10px rgba(20, 30, 50, 0.12); }
+.fill-text { min-width: 0; }
+.counter { font-weight: 650; font-variant-numeric: tabular-nums; }
+.fill-help { font-size: 0.8125rem; color: var(--muted); }
+.fill-bar .error { flex-basis: 100%; }
+.btn-stop { background: var(--surface); border-color: var(--red-border); color: var(--red-text); }
+.btn-stop:hover:not(:disabled) { background: var(--red-bg); }
+.pre.letter { max-width: 72ch; }
+
 .foot { padding-top: 24px; padding-bottom: 32px; color: var(--muted); font-size: 0.875rem; }
 @media (max-width: 480px) {
   .card { padding: 16px; }
+  .fill-help { display: none; }
+  .fill-bar { padding: 6px 10px; gap: 4px 8px; }
+  .counter { font-size: 0.875rem; white-space: nowrap; }
+  .fill-bar .btn { font-size: 0.8125rem; padding: 0 10px; white-space: nowrap; }
   .summary { gap: 16px; }
   .msg { max-width: 94%; }
 }
@@ -331,7 +351,7 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
             <li>Look up the company</li>
             <li>Check your resume against the requirements</li>
             <li>Calculate your fit score</li>
-            <li>Draft your answers and a cover note</li>
+            <li>Draft your answers and a cover letter</li>
           </ol>
         </div>
       </div>
@@ -366,7 +386,7 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
   const $ = (id) => document.getElementById(id);
   const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const RING_LENGTH = 326.73; // circumference of the ring (r = 52)
-  const SUGGESTIONS = ["Make answer 2 shorter", "Shorten the cover note", "Which gap should I fix first?"];
+  const SUGGESTIONS = ["Make answer 2 shorter", "Shorten the cover letter", "Which gap should I fix first?"];
   const TOOL_ICONS = {
     fetch_webpage: "globe", lookup_company: "building", check_resume_for: "search",
     calculate_fit_score: "calc", save_application_pack: "save",
@@ -392,9 +412,12 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
   }
 
   const state = {
-    sessionId: null, running: false, stream: null, pack: null, last: null,
+    sessionId: null,
+    phase: "idle", // idle | starting | running | stopping
+    stream: null, pack: null, last: null, blanks: [],
     turnMax: 0, startedAt: 0, ticker: null, statusEl: null, scrollToResults: false,
   };
+  const fillBar = { node: null, counter: null, button: null, error: null };
   let view = null; // where the current turn's events are drawn
 
   // ---------- small helpers ----------
@@ -407,7 +430,7 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
     target.replaceChildren(...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" }), text] : [text]));
   }
 
-  // Wraps every [ADD: ...] placeholder in an amber <mark>
+  // Wraps every [ADD: ...] placeholder in an amber <mark> (used where the user can't type, e.g. gap advice)
   function withPlaceholders(text) {
     const parts = [];
     const pattern = /\[ADD:[^\]]*\]/g;
@@ -420,6 +443,39 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
     if (last < text.length) parts.push(text.slice(last));
     return parts;
   }
+
+  // Turns every [ADD: hint] into an inline box the user can type into. It is a one-row textarea
+  // that grows with its content, so a long hint or answer wraps instead of running off a phone.
+  // `segments` keeps the original text and the boxes, so Copy can rebuild the text with the values.
+  function fillable(text) {
+    const nodes = [], segments = [];
+    const pattern = /\[ADD:\s*([^\]]*)\]/g;
+    let last = 0, match;
+    const addText = (chunk) => { nodes.push(chunk); segments.push(chunk); };
+    while ((match = pattern.exec(text))) {
+      if (match.index > last) addText(text.slice(last, match.index));
+      const hint = match[1].trim();
+      const box = el("textarea", { rows: "1", placeholder: hint, maxlength: "1000", "aria-label": "Detail to fill in: " + hint });
+      const wrap = el("span", { class: "blank", "data-value": hint }, box);
+      const blank = { token: match[0], hint, box };
+      box.addEventListener("input", () => {
+        wrap.dataset.value = box.value || hint; // the hidden copy that sizes the box
+        wrap.classList.toggle("filled", box.value.trim() !== "");
+        updateFillBar();
+      });
+      box.addEventListener("keydown", (event) => { if (event.key === "Enter") event.preventDefault(); });
+      state.blanks.push(blank);
+      nodes.push(wrap);
+      segments.push(blank);
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) addText(text.slice(last));
+    return { nodes, segments };
+  }
+
+  const valueOf = (blank) => blank.box.value.trim().replace(/\s+/g, " ");
+  // Text with the user's values; blanks they left empty stay as the original [ADD: ...]
+  const filledText = (segments) => segments.map((s) => (typeof s === "string" ? s : valueOf(s) || s.token)).join("");
 
   async function copyText(text, button) {
     try {
@@ -529,15 +585,31 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
     }
   });
 
-  // ---------- running ----------
-  function setRunning(running) {
-    state.running = running;
-    $("btn-run").disabled = running;
-    $("btn-run").textContent = running ? "Running…" : "Run agent";
-    $("timeline").setAttribute("aria-busy", String(running));
-    const chatReady = !running && state.pack !== null;
-    for (const id of ["chat-input", "chat-send"]) $(id).disabled = !chatReady;
-    for (const chip of $("chips").children) chip.disabled = !chatReady;
+  // ---------- phases: idle -> starting -> running -> (stopping) -> idle ----------
+  // While a turn is active, the Run button, the chat Send button and the sticky fill bar all become Stop.
+  function setPhase(phase) {
+    state.phase = phase;
+    const busy = phase !== "idle";
+    const stopLook = phase === "running" || phase === "stopping";
+    const label = { starting: "Starting…", running: "Stop", stopping: "Stopping…" }[phase];
+    const wait = phase === "starting" || phase === "stopping";
+
+    const run = $("btn-run");
+    run.textContent = label || "Run agent";
+    run.disabled = wait;
+    run.classList.toggle("btn-primary", !stopLook);
+    run.classList.toggle("btn-stop", stopLook);
+
+    const send = $("chat-send");
+    send.replaceChildren(...(label ? [label] : [icon("send"), "Send"]));
+    send.disabled = busy ? wait : !state.pack;
+    send.classList.toggle("btn-primary", !stopLook);
+    send.classList.toggle("btn-stop", stopLook);
+
+    $("chat-input").disabled = busy || !state.pack;
+    for (const chip of $("chips").children) chip.disabled = busy || !state.pack;
+    $("timeline").setAttribute("aria-busy", String(busy));
+    updateFillBar();
   }
 
   function startTicker(statusEl) {
@@ -552,23 +624,31 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
 
   function closeStream() { if (state.stream) { state.stream.close(); state.stream = null; } }
 
+  async function stopRun() {
+    if (state.phase !== "running") return;
+    setPhase("stopping");
+    try {
+      await fetch(`/api/stop/${encodeURIComponent(state.sessionId)}`, { method: "POST" });
+    } catch { /* the stream will tell us what happened */ }
+  }
+
   async function startRun() {
-    if (state.running) return;
+    if (state.phase !== "idle") return;
     clearErrors();
     const body = {
       resume: $("resume").value, job: $("job").value,
       questions: $("questions").value.split("\n").map((q) => q.trim()).filter(Boolean),
     };
-    setRunning(true);
+    setPhase("starting");
     let data = {};
     try {
       const response = await fetch("/api/run", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
       });
       data = await response.json().catch(() => ({}));
-      if (!response.ok) { setRunning(false); showApiError(data.detail); return; }
+      if (!response.ok) { setPhase("idle"); showApiError(data.detail); return; }
     } catch {
-      setRunning(false);
+      setPhase("idle");
       $("err-run").textContent = "Could not reach the local server. Is it still running?";
       return;
     }
@@ -577,6 +657,7 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
     closeStream();
     state.sessionId = data.session_id;
     state.pack = null;
+    state.blanks = [];
     state.last = { kind: "run" };
     state.scrollToResults = true;
     $("results").replaceChildren();
@@ -586,7 +667,6 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
     $("chat-status").replaceChildren();
     $("timeline").replaceChildren();
     view = { container: $("timeline"), rows: new Map(), compact: false };
-    setRunning(true);
     startTicker($("status"));
     state.turnMax = 0;
     openStream(0);
@@ -594,6 +674,7 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
 
   function openStream(after) {
     closeStream();
+    setPhase("running");
     const source = new EventSource(`/api/stream/${encodeURIComponent(state.sessionId)}?after=${after}`);
     state.stream = source;
     let failures = 0;
@@ -636,6 +717,9 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
         break;
       case "result":
         showResults(event.pack);
+        break;
+      case "stopped":
+        addToView(el("p", { class: "notice" }, icon("cross"), el("span", {}, event.message || "Stopped by you")));
         break;
       case "error":
         addToView(errorCard(event.message));
@@ -687,19 +771,21 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
   }
 
   function retry() {
-    if (state.last && state.last.kind === "chat") sendChat(state.last.message);
+    const last = state.last;
+    if (last && last.kind === "chat") sendChat(last.message);
+    else if (last && last.kind === "regenerate") regenerate(last.facts);
     else startRun();
   }
 
   function finishTurn(ok, event) {
     stopTicker();
     closeStream();
+    const stopped = ok && event && event.status === "stopped";
     const target = state.statusEl || $("status");
-    setStatus(target, ok
-      ? `Finished in ${state.turnMax.toFixed(1)}s · ${plural(event.model_calls, "model call")}`
-      : "Stopped with an error", false);
-    setRunning(false);
-    if (ok) announce("The agent has finished.");
+    setStatus(target, !ok ? "Ended with an error" : stopped ? "Stopped by you"
+      : `Finished in ${state.turnMax.toFixed(1)}s · ${plural(event.model_calls, "model call")}`, false);
+    setPhase("idle");
+    if (ok) announce(stopped ? "Stopped." : "The agent has finished.");
   }
 
   // ---------- results ----------
@@ -730,8 +816,44 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
       el("div", { class: "table-wrap" }, el("table", {}, head, body)));
   }
 
+  // The sticky bar above the answers: counter + "Regenerate with my details" (or Stop while working)
+  function updateFillBar() {
+    if (!fillBar.counter || !fillBar.counter.isConnected) return;
+    const total = state.blanks.length;
+    const filled = state.blanks.filter((b) => valueOf(b) !== "").length;
+    const text = total ? `${filled} of ${total} details filled` : "Nothing left to fill in";
+    if (fillBar.counter.textContent !== text) fillBar.counter.textContent = text;
+
+    const phase = state.phase;
+    const stopLook = phase === "running" || phase === "stopping";
+    const button = fillBar.button;
+    button.hidden = total === 0 && phase === "idle";
+    button.classList.toggle("btn-primary", !stopLook);
+    button.classList.toggle("btn-stop", stopLook);
+    if (phase === "idle") {
+      button.replaceChildren(icon("refresh"), "Regenerate with my details");
+      button.disabled = filled === 0;
+    } else {
+      button.replaceChildren({ starting: "Starting…", running: "Stop", stopping: "Stopping…" }[phase]);
+      button.disabled = phase === "starting" || phase === "stopping";
+    }
+  }
+
+  function buildFillBar() {
+    fillBar.counter = el("p", { class: "counter", role: "status" });
+    fillBar.error = el("p", { class: "error", role: "alert" });
+    fillBar.button = el("button", { type: "button", class: "btn btn-sm btn-primary" });
+    fillBar.button.addEventListener("click", () => (state.phase === "running" ? stopRun() : regenerate()));
+    fillBar.node = el("div", { class: "fill-bar" },
+      el("div", { class: "fill-text" }, fillBar.counter,
+        el("p", { class: "fill-help" }, "Type your own details into the amber boxes below, then regenerate.")),
+      fillBar.button, fillBar.error);
+    return fillBar.node;
+  }
+
   function showResults(pack) {
     state.pack = pack;
+    state.blanks = []; // fresh boxes for whatever placeholders remain
     const results = $("results");
     const heading = el("h2", { class: "section-title", id: "results-title", tabindex: "-1" }, "Your application pack");
 
@@ -758,26 +880,30 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
 
     const gaps = el("div", { class: "list" }, pack.gaps.map((g) =>
       el("div", { class: "card item" }, el("h3", {}, g.gap),
-        el("div", { class: "label" }, "How to address"), el("p", { class: "body" }, g.how_to_address))));
+        el("div", { class: "label" }, "How to address"), el("p", { class: "body" }, withPlaceholders(g.how_to_address)))));
 
     const banner = el("div", { class: "banner", role: "note" }, icon("warn"),
       el("span", {}, "Draft: check every sentence before you send it. Fill in the highlighted [ADD] parts with your own true details."));
 
-    const answers = el("div", { class: "list" }, pack.answers.map((a, i) =>
-      el("div", { class: "card item" },
-        el("div", { class: "qa-head" }, el("h3", {}, el("span", { class: "num" }, `Q${i + 1}`), a.question), copyButton(() => a.answer)),
-        el("p", { class: "pre" }, withPlaceholders(a.answer)))));
+    const answers = el("div", { class: "list" }, pack.answers.map((a, i) => {
+      const text = fillable(a.answer);
+      return el("div", { class: "card item" },
+        el("div", { class: "qa-head" }, el("h3", {}, el("span", { class: "num" }, `Q${i + 1}`), a.question),
+          copyButton(() => filledText(text.segments))),
+        el("p", { class: "pre" }, text.nodes));
+    }));
 
+    const letter = fillable(pack.cover_letter);
     const cover = el("div", { class: "card item" },
-      el("div", { class: "qa-head" }, el("h3", {}, "Cover note"), copyButton(() => pack.cover_note)),
-      el("p", { class: "pre" }, withPlaceholders(pack.cover_note)));
+      el("div", { class: "qa-head" }, el("h3", {}, "Cover letter"), copyButton(() => filledText(letter.segments))),
+      el("p", { class: "pre letter" }, letter.nodes));
 
     results.replaceChildren(...[
       heading, summary, warnings, breakdown(pack.breakdown),
       el("h2", { class: "section-title" }, "Strengths"), strengths,
       el("h2", { class: "section-title" }, "Gaps and how to address them"), gaps,
-      el("h2", { class: "section-title" }, "Draft answers"), banner, answers,
-      el("h2", { class: "section-title" }, "Cover note"), cover,
+      el("h2", { class: "section-title" }, "Draft answers"), banner, buildFillBar(), answers,
+      el("h2", { class: "section-title" }, "Cover letter"), cover,
     ].filter(Boolean)); // warnings is null when there are none
     results.hidden = false;
     $("chat").hidden = false;
@@ -786,46 +912,62 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
       heading.focus({ preventScroll: true });
       heading.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
     }
-    setRunning(state.running); // enables the chat box once the turn ends
+    setPhase(state.phase); // enables the chat box and the fill bar once the turn ends
   }
 
-  // ---------- follow-up chat ----------
+  // ---------- follow-up turns: chat messages and "Regenerate with my details" ----------
   function addBubble(who, text) {
     const bubble = el("div", { class: "msg msg-" + who }, el("p", {}, text));
     $("thread").append(bubble);
     bubble.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
   }
 
-  async function sendChat(message) {
-    if (state.running || !state.pack) return;
-    $("err-chat").textContent = "";
-    setRunning(true);
+  async function followUp(url, extra, bubbleText, last, errorEl) {
+    if (state.phase !== "idle" || !state.pack) return;
+    errorEl.textContent = "";
+    setPhase("starting");
     let data = {};
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch(url, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: state.sessionId, message }),
+        body: JSON.stringify({ session_id: state.sessionId, ...extra }),
       });
       data = await response.json().catch(() => ({}));
-      if (!response.ok) { setRunning(false); $("err-chat").textContent = data.detail || "Could not send that message."; return; }
+      if (!response.ok) {
+        setPhase("idle");
+        errorEl.textContent = typeof data.detail === "string" ? data.detail : "Could not send that.";
+        return;
+      }
     } catch {
-      setRunning(false);
-      $("err-chat").textContent = "Could not reach the local server.";
+      setPhase("idle");
+      errorEl.textContent = "Could not reach the local server.";
       return;
     }
-    state.last = { kind: "chat", message };
-    addBubble("user", message);
-    $("chat-input").value = "";
-    const thread = el("div", { class: "compact" });
-    $("thread").append(thread);
-    view = { container: thread, rows: new Map(), compact: true };
+    state.last = last;
+    addBubble("user", bubbleText);
+    const turn = el("div", { class: "compact" });
+    $("thread").append(turn);
+    view = { container: turn, rows: new Map(), compact: true };
     state.turnMax = 0;
     startTicker($("chat-status"));
     openStream(data.after);
   }
 
+  function sendChat(message) {
+    $("chat-input").value = "";
+    return followUp("/api/chat", { message }, message, { kind: "chat", message }, $("err-chat"));
+  }
+
+  function regenerate(facts) {
+    facts = facts || state.blanks.filter((b) => valueOf(b) !== "").map((b) => ({ hint: b.hint, value: valueOf(b) }));
+    if (!facts.length) return;
+    return followUp("/api/regenerate", { facts }, `Regenerate with my details (${facts.length} filled)`,
+      { kind: "regenerate", facts }, fillBar.error);
+  }
+
   $("chat-form").addEventListener("submit", (event) => {
     event.preventDefault();
+    if (state.phase === "running") { stopRun(); return; } // while working, the button reads Stop
     const message = $("chat-input").value.trim();
     if (message) sendChat(message);
   });
@@ -833,9 +975,13 @@ blockquote { margin: 10px 0 0; padding: 4px 0 4px 14px; border-left: 3px solid v
     $("chips").append(el("button", { type: "button", class: "btn btn-sm", disabled: true, onclick: () => { $("chat-input").value = text; $("chat-input").focus(); } }, text));
   }
 
-  $("run-form").addEventListener("submit", (event) => { event.preventDefault(); startRun(); });
+  $("run-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (state.phase === "running") stopRun(); // while working, the button reads Stop
+    else startRun();
+  });
 
-  setRunning(false);
+  setPhase("idle");
   loadConfig();
 })();
 </script>

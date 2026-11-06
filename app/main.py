@@ -22,6 +22,9 @@ MAX_TEXT_CHARS = 30_000
 MAX_QUESTIONS = 10
 MAX_QUESTION_CHARS = 1_000
 MAX_MESSAGE_CHARS = 2_000
+MAX_FACTS = 30
+MAX_HINT_CHARS = 500
+MAX_VALUE_CHARS = 1_000
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 KEEPALIVE_SECONDS = 15
 POLL_SECONDS = 0.2
@@ -54,7 +57,8 @@ def get_session(session_id: str) -> agent.Session:
 
 def start_turn(session: agent.Session, message: str) -> None:
     """Run one agent turn in a background thread; the UI reads its events over SSE."""
-    session.status = "running"  # set here too so a fast request never sees "idle"
+    with session.lock:
+        session.status = "running"  # set here too so a fast request never sees "idle"
     threading.Thread(target=agent.run_turn, args=(session, message), daemon=True).start()
 
 
@@ -135,8 +139,8 @@ async def event_stream(session: agent.Session, seen: int):
             last_sent = time.monotonic()
 
         if not running:
-            if session.status == "done":
-                yield sse({"type": "done", "model_calls": session.model_calls})
+            if session.status in ("done", "stopped"):  # a stopped turn ends like a finished one
+                yield sse({"type": "done", "model_calls": session.model_calls, "status": session.status})
             elif not events or events[-1]["type"] != "error":  # the agent's own error event is final
                 yield sse({"type": "error", "message": "The run ended with an error."})
             return
@@ -176,6 +180,53 @@ def chat(request: ChatRequest):
         raise HTTPException(400, f"Write a message of 1 to {MAX_MESSAGE_CHARS:,} characters.")
     after = len(session.events)  # the client streams from here to see only the new turn
     start_turn(session, message)
+    return {"session_id": request.session_id, "after": after}
+
+
+# --- stop ---------------------------------------------------------------------------
+
+@app.post("/api/stop/{session_id}")
+def stop(session_id: str):
+    """Ask the running turn to stop. It checks before every model call and tool call."""
+    if not get_session(session_id).request_stop():
+        raise HTTPException(409, "Nothing is running.")
+    return {"ok": True}
+
+
+# --- regenerate with the candidate's own details --------------------------------------------
+
+class Fact(BaseModel):
+    hint: str
+    value: str
+
+
+class RegenerateRequest(BaseModel):
+    session_id: str
+    facts: list[Fact]
+
+
+@app.post("/api/regenerate")
+def regenerate(request: RegenerateRequest):
+    session = get_session(request.session_id)
+    if session.status == "running":
+        raise HTTPException(409, "The agent is still working. Wait for it to finish, then try again.")
+    if session.pack is None:
+        raise HTTPException(400, "There is no application pack yet. Start a run first.")
+
+    # One line each: the facts are pasted into a message to the model
+    facts = [{"hint": " ".join(f.hint.split()), "value": " ".join(f.value.split())} for f in request.facts]
+    facts = [f for f in facts if f["value"]]
+    if not facts:
+        raise HTTPException(400, "Fill in at least one detail first.")
+    if len(facts) > MAX_FACTS:
+        raise HTTPException(400, f"Please fill in at most {MAX_FACTS} details at a time.")
+    if any(len(f["hint"]) > MAX_HINT_CHARS or len(f["value"]) > MAX_VALUE_CHARS for f in facts):
+        raise HTTPException(400, f"Each detail must be at most {MAX_VALUE_CHARS:,} characters.")
+
+    # Facts accumulate across regenerations; the honesty check accepts them as true sources
+    session.candidate_facts = session.candidate_facts + [f for f in facts if f not in session.candidate_facts]
+    after = len(session.events)
+    start_turn(session, agent.build_facts_message(session.candidate_facts))
     return {"session_id": request.session_id, "after": after}
 
 

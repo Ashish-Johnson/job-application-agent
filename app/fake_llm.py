@@ -17,6 +17,8 @@ from litellm.types.utils import ChatCompletionMessageToolCall, Function
 # Prefix of messages the agent loop writes itself (nudges, "continue").
 # Must match AUTO_PREFIX in agent.py (agent.py can't be imported from here).
 AUTO_PREFIX = "[auto] "
+# Must match FACTS_PREFIX in agent.py: the start of the "Regenerate with my details" message.
+FACTS_PREFIX = "Here are true details provided by the candidate"
 
 _ids = itertools.count(1)
 
@@ -90,13 +92,19 @@ PACK = {
                    "confirmed that this was what the team actually needed, and what you would do "
                    "earlier next time.]"},
     ],
-    "cover_note": "Dear Corvane Pay team, I am applying for the AI Builder (Agents) role. I have "
-                  "about two years of Python and FastAPI experience, including a service at "
-                  "Tallowfield Logistics that uses an OpenAI model to turn delivery emails into "
-                  "structured bookings, and a Gemini function-calling app used by around 30 people. "
-                  "I write pytest tests and run them in GitHub Actions. I have not yet written LLM "
-                  "evaluations or worked in payments, and I would like to learn both quickly. "
-                  "[ADD: one sentence on why Corvane Pay specifically.] Thank you for your time. Maya",
+    "cover_letter": (
+        'Dear Hiring Team,\n'
+        '\n'
+        "I am applying for the AI Builder (Agents) role at Corvane Pay. Your post describes agents that take over repetitive operations work, such as matching payouts to invoices and drafting replies to merchant support tickets, and that is close to work I have already done. [ADD: one specific thing about Corvane Pay's product or team that made you apply.]\n"
+        '\n'
+        'I have about two years of professional experience building back ends in Python. At Tallowfield Logistics I build and maintain internal REST APIs in FastAPI, around 40 endpoints backed by PostgreSQL, used by the dispatch team. I also wrote a Python service that parses customer delivery emails with an OpenAI model and turns them into structured booking records, which cut manual data entry for the dispatch team by roughly half. Outside work I built Recipe Pantry Helper, a small web app that uses Gemini function calling, and about 30 people use it regularly. I write pytest tests for the booking service and run them in GitHub Actions on every pull request.\n'
+        '\n'
+        'I want to be straightforward about what I have not done yet. I have not written evaluations for LLM output, I have not worked in payments or fintech, and I have not built a full multi-step agent loop beyond function calling. [ADD: what you have already started to do about these gaps, such as a test set or a side project.] Your post says you expect people to find the problem and ship a fix, and I have done that with a slow reporting endpoint that I brought from about 9s to under 2s by adding indexes and removing N+1 queries. [ADD: how you found that problem and who you worked with.]\n'
+        '\n'
+        'Thank you for considering my application. [ADD: your availability or start date, and how to reach you.]\n'
+        '\n'
+        'Kind regards,\n'
+        'Maya Okafor-Lindqvist'),
 }
 
 ARGS = {
@@ -173,6 +181,8 @@ def _call(name: str, args: dict | None = None) -> ModelResponse:
 
 
 def _follow_up(history: list, request: str, called: list) -> ModelResponse:
+    if request.startswith(FACTS_PREFIX):
+        return _use_facts(history, request, called)
     shorter = re.search(r"answer\s*(\d+)", request.lower())
     if shorter and "shorter" in request.lower() and "save_application_pack" not in called:
         pack = json.loads(json.dumps(_last_saved_pack(history)))  # deep copy
@@ -184,6 +194,20 @@ def _follow_up(history: list, request: str, called: list) -> ModelResponse:
     return text_reply("Your biggest gap is LLM evaluation: your resume has no test set or scoring "
                       "for model output. Building a small one for the delivery-email parser is the "
                       "quickest way to close it.")
+
+
+def _use_facts(history: list, request: str, called: list) -> ModelResponse:
+    """Rewrite the answers and the letter: each filled [ADD: hint] becomes the candidate's value."""
+    if "save_application_pack" in called:
+        return text_reply("Done: your details are in the answers and the cover letter.")
+    facts = {hint.strip(): value.strip() for hint, value in re.findall(r'^- For "(.+?)": (.+)$', request, re.M)}
+    fill = lambda text: re.sub(r"\[ADD:\s*(.*?)\]", lambda m: facts.get(m.group(1).strip(), m.group(0)), text)  # noqa: E731
+    pack = json.loads(json.dumps(_last_saved_pack(history)))  # deep copy
+    for answer in pack["answers"]:
+        answer["answer"] = fill(answer["answer"])
+    pack["cover_letter"] = fill(pack["cover_letter"])
+    return tool_reply("I'll rewrite your answers and the cover letter with your details and save the full pack.",
+                      [("save_application_pack", pack)])
 
 
 def _last_saved_pack(history: list) -> dict:

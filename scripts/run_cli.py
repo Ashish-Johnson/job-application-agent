@@ -26,6 +26,8 @@ def show(event: dict) -> None:
         print(f"{stamp} WAIT: {event['message']}")
     elif kind == "reply":
         print(f"{stamp} REPLY: {event['text']}")
+    elif kind == "stopped":
+        print(f"{stamp} STOPPED: {event['message']}")
     elif kind == "error":
         print(f"{stamp} ERROR: {event['message']}")
     elif kind == "result":
@@ -43,7 +45,7 @@ def show_pack(pack: dict) -> None:
         print(f"  - {g['gap']}\n      fix: {g['how_to_address']}")
     for i, a in enumerate(pack["answers"], 1):
         print(f"\nQ{i}. {a['question']}\n{a['answer']}")
-    print(f"\nCover note:\n{pack['cover_note']}")
+    print(f"\nCover letter:\n{pack['cover_letter']}")
     for warning in pack.get("warnings", []):
         print(f"\nWARNING (left after honesty-check retries): {warning}")
 
