@@ -223,10 +223,20 @@ def test_numbers_inside_placeholders_are_ignored(scored):
     assert save(scored, pack)["saved"]
 
 
-def test_invented_number_in_a_gap_fix_is_rejected(scored):
+def test_numbers_in_gap_advice_are_allowed_but_not_in_the_gap_itself(scored):
     pack = good_pack()
-    pack["gaps"][0]["how_to_address"] = "Spend 6 weeks on an evaluation course."
-    assert any("gap 1" in i and '"6"' in i for i in save(scored, pack)["issues"])
+    pack["gaps"][0]["how_to_address"] = "Spend 6 weeks on an evaluation course, 3 evenings a week."
+    assert save(scored, pack)["saved"]  # advice, not a claim about the candidate
+
+    scored.pack = None
+    pack["gaps"][0]["gap"] = "Only 6 months of evaluation experience."  # a claim: checked
+    assert any("gap 1 (gap)" in i and '"6"' in i for i in save(scored, pack)["issues"])
+
+
+def test_feelings_in_gap_advice_are_still_rejected(scored):
+    pack = good_pack()
+    pack["gaps"][0]["how_to_address"] = "Say you are passionate about evaluation."
+    assert any("how_to_address" in i and '"passionate"' in i for i in save(scored, pack)["issues"])
 
 
 def test_fake_evidence_is_rejected(scored):

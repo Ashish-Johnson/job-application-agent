@@ -218,20 +218,23 @@ def honesty_issues(session, fields: dict) -> list[str]:
             issues.append(f'Strength {i}: the evidence is not a quote from the resume: "{evidence[:80]}". '
                           "Copy the resume text exactly.")
 
-    # 2 and 3. Numbers and feelings in everything the candidate would say or send
-    texts = [("summary", fields["summary"]), ("cover note", fields["cover_note"])]
+    # 2 and 3. Numbers and feelings in everything the candidate would say or send.
+    # (label, text, check_numbers): how_to_address is advice ("practise for 4 weeks"), not a
+    # claim about the candidate, so only its feelings are checked.
+    texts = [("summary", fields["summary"], True), ("cover note", fields["cover_note"], True)]
     for i, item in enumerate(fields["strengths"], 1):
-        texts.append((f"strength {i}", item.get("strength", "") if isinstance(item, dict) else ""))
+        texts.append((f"strength {i}", item.get("strength", "") if isinstance(item, dict) else "", True))
     for i, item in enumerate(fields["gaps"], 1):
         for key in ("gap", "how_to_address"):
-            texts.append((f"gap {i} ({key})", item.get(key, "") if isinstance(item, dict) else ""))
+            texts.append((f"gap {i} ({key})", item.get(key, "") if isinstance(item, dict) else "",
+                          key != "how_to_address"))
     for i, item in enumerate(fields["answers"], 1):
-        texts.append((f"answer {i}", item.get("answer", "") if isinstance(item, dict) else ""))
+        texts.append((f"answer {i}", item.get("answer", "") if isinstance(item, dict) else "", True))
 
-    for label, text in texts:
+    for label, text, check_numbers in texts:
         text = re.sub(r"\[ADD:[^\]]*\]", " ", str(text))  # placeholders may hold anything
         reported = set()
-        for match in re.finditer(r"\d+(?:[.,]\d+)*", text):
+        for match in re.finditer(r"\d+(?:[.,]\d+)*", text if check_numbers else ""):
             number = match.group().replace(",", "")
             if number not in allowed_numbers and number not in reported:
                 reported.add(number)
