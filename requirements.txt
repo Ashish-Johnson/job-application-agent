@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+litellm
+python-dotenv
+pypdf
+httpx
+beautifulsoup4
+python-multipart
+pytest
